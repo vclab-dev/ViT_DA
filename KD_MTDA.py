@@ -148,7 +148,15 @@ def data_load(batch_size=32,txt_path='data/office-home'):
 
     return dset_loaders
 
-def train_sequential_KD(student_model_list, teacher_model_list, dataloader, temp_coeff=0.1):
+def dist_loss(t, s, T=0.1):
+    soft = nn.Softmax(dim=1)
+
+    prob_t = soft(t/T)
+    log_prob_s = nn.LogSoftmax( dim=1)(s/T)
+    dist_loss = -(prob_t*log_prob_s).sum(dim=1).mean()
+    return dist_loss
+
+def train_sequential_KD(student_model_list, teacher_model_list, dataloader, temp_coeff=0.1, num_epoch=1, log_interval=2):
     # print(len(dataloader))
     netF_student = student_model_list[0]
     netB_student = student_model_list[1]
@@ -162,23 +170,41 @@ def train_sequential_KD(student_model_list, teacher_model_list, dataloader, temp
 
     iter_test = iter(dataloader)
     soft = nn.Softmax(dim=1)
+    list_of_params = list(netF_student.parameters()) + list(netB_student.parameters()) + list(netC_student.parameters()) 
+    optimizer = optim.SGD(list_of_params, lr=0.0001, momentum=0.9)
+    for epoch in range(num_epoch):
+        running_loss = 0.0
 
-    for _ in range(len(dataloader)):
-        with torch.no_grad():
-            data = iter_test.next()
-            inputs = data[0].to('cuda')
-            labels = data[1].to('cuda')
+        for i in range(len(dataloader)):
+    
+            with torch.no_grad():
+                data = iter_test.next()
+                inputs = data[0].to('cuda')
+                labels = data[1].to('cuda')
 
-            # Teacher output
-            teach_outputs = netC_teacher(netB_teacher(netF_teacher(inputs)))
-            soft_op = soft(teach_outputs/temp_coeff)
-        
-        
-        # Student Train
+                # Teacher output
+                teach_outputs = netC_teacher(netB_teacher(netF_teacher(inputs)))
+                soft_teach_op = soft(teach_outputs/temp_coeff)
+            
+            
+            # Student Train
+            optimizer.zero_grad()
+            student_outputs = netC_student(netB_student(netF_student(inputs)))
+            soft_student_op = soft(student_outputs)
 
-        student_outputs = netC_student(netB_student(netF_student(inputs)))
-        
-        
+            loss = nn.KLDivLoss()(soft_teach_op,soft_student_op)#dist_loss(soft_teach_op,soft_student_op T=temp_coeff)
+            loss.backward()
+            optimizer.step()
+            running_loss += loss.item()
+            if i % log_interval == 0: 
+
+                print('[%d / %5d] loss: %.3f' %
+                    (epoch + 1, i + 1, running_loss / log_interval))
+                running_loss = 0.0
+    print('Finished Training')
+
+    return [netF_student, netB_student, netC_student]
+
 if __name__ == '__main__':
     
     source = 'Clipart'
@@ -193,4 +219,6 @@ if __name__ == '__main__':
     # test_model(teachers['CP'], dom_dataloaders['Product'])
     # test_model(teachers['CR'], dom_dataloaders['RealWorld'])
     
-    train_sequential_KD(student, teachers['CA'], dom_dataloaders['Art'], temp_coeff=0.1)
+    student = train_sequential_KD(student, teachers['CA'], dom_dataloaders['Art'], temp_coeff=0.1)
+    test_model(student, dom_dataloaders['Art'])
+
