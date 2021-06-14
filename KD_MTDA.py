@@ -158,6 +158,10 @@ def dist_loss(t, s, T=0.1):
 
 def train_sequential_KD(student_model_list, teacher_model_list, dataloader, temp_coeff=0.1, num_epoch=1, log_interval=2):
     # print(len(dataloader))
+
+    '''
+        take a teacher model (already apated), take a dataloader and distil the knowledge to student 
+    '''
     netF_student = student_model_list[0]
     netB_student = student_model_list[1]
     netC_student = student_model_list[2]
