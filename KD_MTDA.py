@@ -20,6 +20,7 @@ from sklearn.metrics import confusion_matrix
 from loss import KnowledgeDistillationLoss
 import wandb
 from tqdm import tqdm
+wandb.init(project='cycle_MTDA_ViT', entity='vclab')
 
 
 def create_teachers_student(s2t, source): 
@@ -267,34 +268,37 @@ if __name__ == '__main__':
 
     teachers, student = create_teachers_student(s2t, source)
     dom_dataloaders = data_load(batch_size=64) #office_home_dataloaders('data/office-home')
-    mix_dataloaders = mixed_data_load(batch_size=64)
+    # mix_dataloaders = mixed_data_load(batch_size=64)
 
     # test_model(teachers['CA'], dom_dataloaders['Art'])
     # test_model(teachers['CP'], dom_dataloaders['Product'])
     # test_model(teachers['CR'], dom_dataloaders['RealWorld'])
     # test_model(teachers['CR'], mix_dataloaders['Clipart']) 
+    cycles = 2
 
-    student = train_sequential_KD(student, teachers['CA'], dom_dataloaders['Art'], temp_coeff=0.1, num_epoch=1, log_interval=5)
-    print('Testing Acc on Art')
-    test_model(student, dom_dataloaders['Art'])
+    for i in range(cycles):
+        print('\n#### CYCLE {i} #####\n')
 
-    student = train_sequential_KD(student, teachers['CP'], dom_dataloaders['Product'], temp_coeff=0.1, num_epoch=1, log_interval=5)
-    print('Testing Acc on Product')
-    test_model(student, dom_dataloaders['Product'])   
-    print('Testing Acc on Art')
-    test_model(student, dom_dataloaders['Art'])
+        student = train_sequential_KD(student, teachers['CA'], dom_dataloaders['Art'], temp_coeff=0.1, num_epoch=10, log_interval=5)
+        print('Testing Acc on Art')
+        test_model(student, dom_dataloaders['Art'])
 
-    student = train_sequential_KD(student, teachers['CR'], dom_dataloaders['RealWorld'], temp_coeff=0.1, num_epoch=1, log_interval=5)
-    print('Testing Acc on RealWorld')
-    test_model(student, dom_dataloaders['RealWorld'])
-    print('Testing Acc on Product')
-    test_model(student, dom_dataloaders['Product'])   
-    print('Testing Acc on Art')
-    test_model(student, dom_dataloaders['Art'])
-       
-    torch.save(student[0].state_dict(), osp.join(save_path, f"target_F_{source}.pt"))
-    torch.save(student[1].state_dict(), osp.join(save_path, f"target_B_{source}.pt"))
-    torch.save(student[2].state_dict(), osp.join(save_path, f"target_C_{source}.pt"))
+        student = train_sequential_KD(student, teachers['CP'], dom_dataloaders['Product'], temp_coeff=0.1, num_epoch=10, log_interval=5)
+        print('Testing Acc on Product')
+        test_model(student, dom_dataloaders['Product'])   
+        print('Testing Acc on Art')
+        test_model(student, dom_dataloaders['Art'])
 
-    print('Testing Acc on remianing target')
-    test_model(student, mix_dataloaders['Clipart']) 
+        student = train_sequential_KD(student, teachers['CR'], dom_dataloaders['RealWorld'], temp_coeff=0.1, num_epoch=10, log_interval=5)
+        print('Testing Acc on RealWorld')
+        test_model(student, dom_dataloaders['RealWorld'])
+        print('Testing Acc on Product')
+        test_model(student, dom_dataloaders['Product'])   
+        print('Testing Acc on Art')
+        test_model(student, dom_dataloaders['Art'])
+        
+        torch.save(student[0].state_dict(), osp.join(save_path, f"target_F_{source}.pt"))
+        torch.save(student[1].state_dict(), osp.join(save_path, f"target_B_{source}.pt"))
+        torch.save(student[2].state_dict(), osp.join(save_path, f"target_C_{source}.pt"))
+
+        
