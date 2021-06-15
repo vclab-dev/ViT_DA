@@ -1,4 +1,5 @@
 import argparse
+from genericpath import exists
 import os, sys
 import os.path as osp
 from numpy.core.fromnumeric import shape
@@ -117,7 +118,7 @@ def test_model(model_list, dataloader):
 
     print('Accuracy of the network on the test images: {}'.format(100 * correct / total))
 
-def data_load(batch_size=32,txt_path='data/office-home'):
+def data_load(batch_size=64,txt_path='data/office-home'):
     ## prepare data
 
     def image_train(resize_size=256, crop_size=224, alexnet=False):
@@ -152,7 +153,7 @@ def dist_loss(t, s, T=0.1):
     soft = nn.Softmax(dim=1)
 
     prob_t = soft(t/T)
-    log_prob_s = nn.LogSoftmax( dim=1)(s/T)
+    log_prob_s = nn.LogSoftmax( dim=1)(s)
     dist_loss = -(prob_t*log_prob_s).sum(dim=1).mean()
     return dist_loss
 
@@ -194,22 +195,23 @@ def train_sequential_KD(student_model_list, teacher_model_list, dataloader, temp
                 data = iter_test.next()
                 inputs = data[0].to('cuda')
                 labels = data[1].to('cuda')
-
                 # Teacher output
                 teach_outputs = netC_teacher(netB_teacher(netF_teacher(inputs)))
                 # soft_teach_op = soft(teach_outputs/temp_coeff)
-            
             
             # Student Train
             optimizer.zero_grad()
             student_outputs = netC_student(netB_student(netF_student(inputs)))
             # soft_student_op = soft(student_outputs)
-
-            loss = dist_loss(teach_outputs,student_outputs)#dist_loss(soft_teach_op,soft_student_op T=temp_coeff)
+            if epoch <=5:
+                loss = nn.MSELoss()(teach_outputs,student_outputs)
+            else:
+                loss = dist_loss(teach_outputs,student_outputs)
+            # loss = nn.MSELoss()(teach_outputs,student_outputs)#dist_loss(soft_teach_op,soft_student_op T=temp_coeff)
             loss.backward()
             optimizer.step()
             running_loss += loss.item()
-            if i % log_interval == 0: 
+            if i % log_interval == 0 : 
 
                 print('[%d / %5d] loss: %.3f' %
                     (epoch + 1, i + 1, running_loss / log_interval))
@@ -218,19 +220,81 @@ def train_sequential_KD(student_model_list, teacher_model_list, dataloader, temp
 
     return [netF_student, netB_student, netC_student]
 
+def mixed_data_load(batch_size=64,txt_path='data/office_home_mixed'):
+    '''
+        Returns a dict of dataloaders on mixed set.
+        dataloader[source] will have all the target except source.  
+    '''
+
+    def image_train(resize_size=256, crop_size=224, alexnet=False):
+        normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
+                                        std=[0.229, 0.224, 0.225])
+        return transforms.Compose([
+            transforms.Resize((resize_size, resize_size)),
+            transforms.RandomCrop(crop_size),
+            transforms.RandomHorizontalFlip(),
+            transforms.ToTensor(),
+            normalize
+        ])
+
+    dsets = {}
+    dset_loaders = {}
+    train_bs = batch_size
+    
+    txt_files = {'RealWorld' : f'{txt_path}/Art_Clipart_Product.txt', 
+                'Procuct': f'{txt_path}/Art_Clipart_Real_World.txt', 
+                'Clipart': f'{txt_path}/Art_Product_Real_World.txt',
+                'Art': f'{txt_path}/Clipart_Product_Real_World.txt'}
+                
+    for domain, paths in txt_files.items(): 
+        txt_tar = open(paths).readlines()
+
+        dsets[domain] = ImageList_idx(txt_tar, transform=image_train())
+        dset_loaders[domain] = DataLoader(dsets[domain], batch_size=train_bs, shuffle=True,drop_last=False)
+
+    return dset_loaders
+
+
 if __name__ == '__main__':
     
     source = 'Clipart'
+    save_weight_dir = 'ckps/office-home'
 
+    save_path = f'{save_weight_dir}/{source}_to_others'
+    os.makedirs(save_path,exist_ok=True)
     s2t = {'Art' : ['AC', 'AP', 'AR'], 'Clipart': ['CA', 'CP', 'CR'], 
             'Product': ['PA','PC','PR'], 'RealWorld': ['RA', 'RP', 'RC']}
 
     teachers, student = create_teachers_student(s2t, source)
-    dom_dataloaders = data_load() #office_home_dataloaders('data/office-home')
+    dom_dataloaders = data_load(batch_size=64) #office_home_dataloaders('data/office-home')
+    mix_dataloaders = mixed_data_load(batch_size=64)
 
     # test_model(teachers['CA'], dom_dataloaders['Art'])
     # test_model(teachers['CP'], dom_dataloaders['Product'])
     # test_model(teachers['CR'], dom_dataloaders['RealWorld'])
-    
-    student = train_sequential_KD(student, teachers['CA'], dom_dataloaders['Art'], temp_coeff=0.1, num_epoch=10)
+    # test_model(teachers['CR'], mix_dataloaders['Clipart']) 
+
+    student = train_sequential_KD(student, teachers['CA'], dom_dataloaders['Art'], temp_coeff=0.1, num_epoch=1, log_interval=5)
+    print('Testing Acc on Art')
     test_model(student, dom_dataloaders['Art'])
+
+    student = train_sequential_KD(student, teachers['CP'], dom_dataloaders['Product'], temp_coeff=0.1, num_epoch=1, log_interval=5)
+    print('Testing Acc on Product')
+    test_model(student, dom_dataloaders['Product'])   
+    print('Testing Acc on Art')
+    test_model(student, dom_dataloaders['Art'])
+
+    student = train_sequential_KD(student, teachers['CR'], dom_dataloaders['RealWorld'], temp_coeff=0.1, num_epoch=1, log_interval=5)
+    print('Testing Acc on RealWorld')
+    test_model(student, dom_dataloaders['RealWorld'])
+    print('Testing Acc on Product')
+    test_model(student, dom_dataloaders['Product'])   
+    print('Testing Acc on Art')
+    test_model(student, dom_dataloaders['Art'])
+       
+    torch.save(student[0].state_dict(), osp.join(save_path, f"target_F_{source}.pt"))
+    torch.save(student[1].state_dict(), osp.join(save_path, f"target_B_{source}.pt"))
+    torch.save(student[2].state_dict(), osp.join(save_path, f"target_C_{source}.pt"))
+
+    print('Testing Acc on remianing target')
+    test_model(student, mix_dataloaders['Clipart']) 
