@@ -169,15 +169,24 @@ def train_sequential_KD(student_model_list, teacher_model_list, dataloader, temp
     netF_teacher = teacher_model_list[0]
     netB_teacher = teacher_model_list[1]
     netC_teacher = teacher_model_list[2]
+    
+    for param in netF_teacher.parameters():
+        param.requires_grad = False
+
+    for param in netB_teacher.parameters():
+        param.requires_grad = False   
+    
+    for param in netC_teacher.parameters():
+        param.requires_grad = False
 
     print('Started Training')
 
-    iter_test = iter(dataloader)
     soft = nn.Softmax(dim=1)
     list_of_params = list(netF_student.parameters()) + list(netB_student.parameters()) + list(netC_student.parameters()) 
-    optimizer = optim.SGD(list_of_params, lr=0.0001, momentum=0.9)
+    optimizer = optim.SGD(list_of_params, lr=0.001, momentum=0.9)
     for epoch in range(num_epoch):
         running_loss = 0.0
+        iter_test = iter(dataloader)
 
         for i in range(len(dataloader)):
     
@@ -188,15 +197,15 @@ def train_sequential_KD(student_model_list, teacher_model_list, dataloader, temp
 
                 # Teacher output
                 teach_outputs = netC_teacher(netB_teacher(netF_teacher(inputs)))
-                soft_teach_op = soft(teach_outputs/temp_coeff)
+                # soft_teach_op = soft(teach_outputs/temp_coeff)
             
             
             # Student Train
             optimizer.zero_grad()
             student_outputs = netC_student(netB_student(netF_student(inputs)))
-            soft_student_op = soft(student_outputs)
+            # soft_student_op = soft(student_outputs)
 
-            loss = nn.KLDivLoss()(soft_teach_op,soft_student_op)#dist_loss(soft_teach_op,soft_student_op T=temp_coeff)
+            loss = dist_loss(teach_outputs,student_outputs)#dist_loss(soft_teach_op,soft_student_op T=temp_coeff)
             loss.backward()
             optimizer.step()
             running_loss += loss.item()
@@ -223,6 +232,5 @@ if __name__ == '__main__':
     # test_model(teachers['CP'], dom_dataloaders['Product'])
     # test_model(teachers['CR'], dom_dataloaders['RealWorld'])
     
-    student = train_sequential_KD(student, teachers['CA'], dom_dataloaders['Art'], temp_coeff=0.1)
+    student = train_sequential_KD(student, teachers['CA'], dom_dataloaders['Art'], temp_coeff=0.1, num_epoch=10)
     test_model(student, dom_dataloaders['Art'])
-
