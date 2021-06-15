@@ -274,10 +274,10 @@ if __name__ == '__main__':
     # test_model(teachers['CP'], dom_dataloaders['Product'])
     # test_model(teachers['CR'], dom_dataloaders['RealWorld'])
     # test_model(teachers['CR'], mix_dataloaders['Clipart']) 
-    cycles = 2
+    cycles = 3
 
     for i in range(cycles):
-        print('\n#### CYCLE {i} #####\n')
+        print(f'\n#### CYCLE {i} #####\n')
 
         student = train_sequential_KD(student, teachers['CA'], dom_dataloaders['Art'], temp_coeff=0.1, num_epoch=10, log_interval=5)
         print('Testing Acc on Art')
