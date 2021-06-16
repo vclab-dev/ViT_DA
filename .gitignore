@@ -3,3 +3,4 @@ ckps/
 .vscode/
 wandb/
 model/
+/__pycache__/
