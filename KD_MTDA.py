@@ -1,5 +1,6 @@
 import argparse
 from genericpath import exists
+from logging import disable
 import os, sys
 import os.path as osp
 from numpy.core.fromnumeric import shape
@@ -20,7 +21,11 @@ from sklearn.metrics import confusion_matrix
 from loss import KnowledgeDistillationLoss
 import wandb
 from tqdm import tqdm
+import random
 
+np.random.seed(0)
+random.seed(0)
+torch.manual_seed(0)
 
 def create_teachers_student(s2t, source): 
 
@@ -214,7 +219,7 @@ def train_sequential_KD(student_model_list, teacher_model_list, dataloader, temp
             optimizer.step()
             running_loss += loss.item()
             epoch_loss+=running_loss
-            if i % log_interval == 0 : 
+            if i % log_interval == log_interval-1 : 
 
                 print('[%d / %5d] loss: %.3f' %
                     (epoch + 1, i + 1, running_loss / log_interval))
@@ -294,47 +299,60 @@ def multi_domain_avg_acc(student, test_on=None):
         
 
 if __name__ == '__main__':
-    
-    source = 'Art'
-    wandb.init(project='cycle_MTDA_ViT', entity='vclab',name=f"{source} to others Cycle")
 
+    parser = argparse.ArgumentParser(description='Args parser for KD_MTDA')
+
+    # training parameters
+    parser.add_argument('-b', '--batch_size', default=32, type=int,help='mini-batch size (default: 32)')
+    parser.add_argument('-s', '--source', type=str,help='Select the source [Art, Clipart, Product, RealWorld]')
+    parser.add_argument('-e', '--epochs', default=100, type=int,help='select number of cycles')
+    parser.add_argument('-w', '--use_wandb', default=0, type=int,help='Log to wandb or not [0 - dont use | 1 - use]')
+    
+    args = parser.parse_args()
+
+    # parser.add_argument('--lr', '--learning-rate', default=0.001, type=float,
+    #                     metavar='LR', help='initial learning rate', dest='lr')
+    
+    source = args.source
+    total_epoch = args.epochs
+    batch_size = args.batch_size
     save_weight_dir = 'ckps/office-home'
 
+    mode = 'online' if args.use_wandb else 'disabled'
+
+    wandb.init(project='cycle_MTDA_ViT', entity='vclab',name=f"{source} to others Cycle", mode=mode)
     save_path = f'{save_weight_dir}/{source}_to_others'
     os.makedirs(save_path,exist_ok=True)
+
+
     s2t = {'Art' : ['AC', 'AP', 'AR'], 'Clipart': ['CA', 'CP', 'CR'], 
             'Product': ['PA','PC','PR'], 'RealWorld': ['RA', 'RP', 'RC']}
 
     teachers, student = create_teachers_student(s2t, source)
-    dom_dataloaders = data_load(batch_size=24) #office_home_dataloaders('data/office-home')
-    # mix_dataloaders = mixed_data_load(batch_size=64)
+    dom_dataloaders = data_load(batch_size=batch_size) 
 
-    # test_model(teachers['CA'], dom_dataloaders['Art'])
-    # test_model(teachers['CP'], dom_dataloaders['Product'])
-    # test_model(teachers['CR'], dom_dataloaders['RealWorld'])
-    # test_model(teachers['CR'], mix_dataloaders['Clipart']) 
+    sequential_train_select = { 'Art': [['AC', 'Clipart'], ['AP', 'Product'], ['AR', 'RealWorld']],
+                                'Clipart': [['CA', 'Art'], ['CP', 'Product'], ['CR', 'RealWorld']],
+                                'Product': [['PA', 'Art'], ['PC', 'Clipart'], ['PR', 'RealWorld']],
+                                'RealWorld': [['RA' , 'Art'], ['RC', 'Clipart'], ['RP', 'Product']],
+                                }
     
-    total_epoch = 100
+    test_domains = list(sequential_train_select.keys())
+    test_domains.remove(source)
+
     for i in range(total_epoch):
-        print(f'\n\n#### CYCLE {i} #####\n\n')
+        print(f'\n\n#### CYCLE {i+1} #####\n\n')
+        for adap_module, domain_sel in sequential_train_select[source]:
+            print(f'\nStarted Distillation from Teacher {adap_module} -> to student using {domain_sel} images\n\n')
+            student = train_sequential_KD(student, teachers[adap_module], dom_dataloaders[domain_sel], temp_coeff=0.1, num_epoch=1, log_interval=5)
 
-        student = train_sequential_KD(student, teachers['AR'], dom_dataloaders['RealWorld'], temp_coeff=0.1, num_epoch=1, log_interval=5)
-        # print('Testing Acc on Art')
-        # test_model(student, dom_dataloaders['Art'])
-
-        student = train_sequential_KD(student, teachers['AC'], dom_dataloaders['Clipart'], temp_coeff=0.1, num_epoch=1, log_interval=5)
-        # print('Testing Acc on Clipart')
-        # test_model(student, dom_dataloaders['Clipart'])   
-        # print('Testing Acc on Art')
-        # test_model(student, dom_dataloaders['Art'])
-
-        student = train_sequential_KD(student, teachers['AP'], dom_dataloaders['Product'], temp_coeff=0.1, num_epoch=1, log_interval=5)
         if i % 10 ==0:
-            test_domains = ['Product', 'Clipart', 'RealWorld']
+
             avg_acc = multi_domain_avg_acc(student,test_on=test_domains)
             
             wandb.log({"avg_acc":avg_acc, 'cycle': i})
-    
+
+            print('Saving model at: ', save_path)
             torch.save(student[0].state_dict(), osp.join(save_path, f"target_F_{source}.pt"))
             torch.save(student[1].state_dict(), osp.join(save_path, f"target_B_{source}.pt"))
             torch.save(student[2].state_dict(), osp.join(save_path, f"target_C_{source}.pt"))
