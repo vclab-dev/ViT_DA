@@ -27,7 +27,7 @@ np.random.seed(0)
 random.seed(0)
 torch.manual_seed(0)
 
-def create_teachers_student(s2t, source): 
+def create_teachers_student(s2t, source, student_arch='rn50'): 
 
     '''
         Create ensemble of teachers and one student model 
@@ -61,39 +61,20 @@ def create_teachers_student(s2t, source):
     
     print('Teachers made Successfully !')
 
-    netF = network.ViT().cuda()
-    netB = network.feat_bootleneck(type='bn', feature_dim=netF.in_features,bottleneck_dim=256).cuda()
-    netC = network.feat_classifier(type='wn', class_num=65, bottleneck_dim=256).cuda()
+    if student_arch == 'rn50':
+        netF = network.ResBase(res_name='resnet50').cuda()
+    if student_arch == 'vit':
+        netF = network.ViT().cuda()
+    netB = network.feat_bootleneck(type='bn', feature_dim=netF.in_features,bottleneck_dim=1024).cuda()
+    netC = network.feat_classifier(type='wn', class_num=65, bottleneck_dim=1024).cuda()
     
+    print(f'Created {student_arch} based student')
     netF.train()
     netB.train()
     netC.train()
 
     student = [netF,netB, netC]
     return teachers, student
-
-def office_home_dataloaders(path, batch_size=32):
-    
-    domains = ['Art', 'Clipart', 'Product', 'RealWorld']
-   
-   # Transformation
-
-    normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
-                                         std=[0.229, 0.224, 0.225])
-    trans = transforms.Compose([
-            transforms.Resize((256, 256)),
-            transforms.RandomCrop(224),
-            transforms.RandomHorizontalFlip(),
-            transforms.ToTensor(),
-            normalize
-        ])
-    domain_dataloaders = {}
-
-    for dom in domains:
-        dataset = torchvision.datasets.ImageFolder(f'{path}/{dom}', transform=trans)
-        domain_dataloaders[dom] = torch.utils.data.DataLoader(dataset, batch_size=batch_size, shuffle=True)
-
-    return domain_dataloaders
 
 def test_model(model_list, dataloader, dataset_name=None):
     # print(len(dataloader))
@@ -213,7 +194,7 @@ def train_sequential_KD(student_model_list, teacher_model_list, dataloader, temp
             if epoch <=5:
                 loss = nn.MSELoss()(teach_outputs,student_outputs)
             else:
-                loss = dist_loss(teach_outputs,student_outputs)
+                loss = dist_loss(teach_outputs,student_outputs,T=temp_coeff)
             # loss = nn.MSELoss()(teach_outputs,student_outputs)#dist_loss(soft_teach_op,soft_student_op T=temp_coeff)
             loss.backward()
             optimizer.step()
@@ -230,40 +211,6 @@ def train_sequential_KD(student_model_list, teacher_model_list, dataloader, temp
     print('Finished Training')
 
     return [netF_student, netB_student, netC_student]
-
-def mixed_data_load(batch_size=64,txt_path='data/office_home_mixed'):
-    '''
-        Returns a dict of dataloaders on mixed set.
-        dataloader[source] will have all the target except source.  
-    '''
-
-    def image_train(resize_size=256, crop_size=224, alexnet=False):
-        normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
-                                        std=[0.229, 0.224, 0.225])
-        return transforms.Compose([
-            transforms.Resize((resize_size, resize_size)),
-            transforms.RandomCrop(crop_size),
-            transforms.RandomHorizontalFlip(),
-            transforms.ToTensor(),
-            normalize
-        ])
-
-    dsets = {}
-    dset_loaders = {}
-    train_bs = batch_size
-    
-    txt_files = {'RealWorld' : f'{txt_path}/Art_Clipart_Product.txt', 
-                'Procuct': f'{txt_path}/Art_Clipart_Real_World.txt', 
-                'Clipart': f'{txt_path}/Art_Product_Real_World.txt',
-                'Art': f'{txt_path}/Clipart_Product_Real_World.txt'}
-                
-    for domain, paths in txt_files.items(): 
-        txt_tar = open(paths).readlines()
-
-        dsets[domain] = ImageList_idx(txt_tar, transform=image_train())
-        dset_loaders[domain] = DataLoader(dsets[domain], batch_size=train_bs, shuffle=True,drop_last=False)
-
-    return dset_loaders
 
 def multi_domain_avg_acc(student, test_on=None):
 
@@ -307,11 +254,10 @@ if __name__ == '__main__':
     parser.add_argument('-s', '--source', type=str,help='Select the source [Art, Clipart, Product, RealWorld]')
     parser.add_argument('-e', '--epochs', default=100, type=int,help='select number of cycles')
     parser.add_argument('-w', '--use_wandb', default=0, type=int,help='Log to wandb or not [0 - dont use | 1 - use]')
+    parser.add_argument('-a', '--arch', default='rn50', type=str,help='Select student vit or rn50 based (default: rn50)')
     
     args = parser.parse_args()
 
-    # parser.add_argument('--lr', '--learning-rate', default=0.001, type=float,
-    #                     metavar='LR', help='initial learning rate', dest='lr')
     
     source = args.source
     total_epoch = args.epochs
@@ -319,8 +265,8 @@ if __name__ == '__main__':
     save_weight_dir = 'ckps/office-home'
 
     mode = 'online' if args.use_wandb else 'disabled'
-
-    wandb.init(project='cycle_MTDA_ViT', entity='vclab',name=f"{source} to others Cycle", mode=mode)
+    wandb.init(project='cycle_MTDA_ViT', entity='vclab',name=f"{source} to others {args.arch}", mode=mode)
+    
     save_path = f'{save_weight_dir}/{source}_to_others'
     os.makedirs(save_path,exist_ok=True)
 
@@ -328,7 +274,7 @@ if __name__ == '__main__':
     s2t = {'Art' : ['AC', 'AP', 'AR'], 'Clipart': ['CA', 'CP', 'CR'], 
             'Product': ['PA','PC','PR'], 'RealWorld': ['RA', 'RP', 'RC']}
 
-    teachers, student = create_teachers_student(s2t, source)
+    teachers, student = create_teachers_student(s2t, source, student_arch=args.arch)
     dom_dataloaders = data_load(batch_size=batch_size) 
 
     sequential_train_select = { 'Art': [['AC', 'Clipart'], ['AP', 'Product'], ['AR', 'RealWorld']],
@@ -343,7 +289,7 @@ if __name__ == '__main__':
     for i in range(total_epoch):
         print(f'\n\n#### CYCLE {i+1} #####\n\n')
         for adap_module, domain_sel in sequential_train_select[source]:
-            print(f'\nStarted Distillation from Teacher {adap_module} -> to student using {domain_sel} images\n\n')
+            print(f'Started Distillation from Teacher {adap_module} -> to student using {domain_sel} images\n')
             student = train_sequential_KD(student, teachers[adap_module], dom_dataloaders[domain_sel], temp_coeff=0.1, num_epoch=1, log_interval=5)
 
         if i % 10 ==0:
@@ -353,6 +299,6 @@ if __name__ == '__main__':
             wandb.log({"avg_acc":avg_acc, 'cycle': i})
 
             print('Saving model at: ', save_path)
-            torch.save(student[0].state_dict(), osp.join(save_path, f"target_F_{source}.pt"))
-            torch.save(student[1].state_dict(), osp.join(save_path, f"target_B_{source}.pt"))
-            torch.save(student[2].state_dict(), osp.join(save_path, f"target_C_{source}.pt"))
+            torch.save(student[0].state_dict(), osp.join(save_path, f"target_F_{source}_{args.arch}.pt"))
+            torch.save(student[1].state_dict(), osp.join(save_path, f"target_B_{source}_{args.arch}.pt"))
+            torch.save(student[2].state_dict(), osp.join(save_path, f"target_C_{source}_{args.arch}.pt"))

@@ -5,3 +5,5 @@ wandb/
 model/
 /__pycache__/
 TransUNet/networks/__pycache__/
+*vikash*
+test.py
