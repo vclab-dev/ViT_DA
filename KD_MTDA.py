@@ -144,7 +144,7 @@ def dist_loss(t, s, T=0.1):
     dist_loss = -(prob_t*log_prob_s).sum(dim=1).mean()
     return dist_loss
 
-def train_sequential_KD(student_model_list, teacher_model_list, dataloader, temp_coeff=0.1, num_epoch=1, log_interval=2):
+def train_sequential_KD(student_model_list, teacher_model_list, dataloader, curr_cycle= 0, max_cycles=100, temp_coeff=0.1, num_epoch=1, log_interval=2):
     # print(len(dataloader))
 
     '''
@@ -173,6 +173,7 @@ def train_sequential_KD(student_model_list, teacher_model_list, dataloader, temp
     list_of_params = list(netF_student.parameters()) + list(netB_student.parameters()) + list(netC_student.parameters()) 
     optimizer = optim.SGD(list_of_params, lr=0.001, momentum=0.9)
     epoch_loss=  0.0
+    max_iter = len(dataloader)
     for epoch in range(num_epoch):
         running_loss = 0.0
         iter_test = iter(dataloader)
@@ -201,9 +202,8 @@ def train_sequential_KD(student_model_list, teacher_model_list, dataloader, temp
             running_loss += loss.item()
             epoch_loss+=running_loss
             if i % log_interval == log_interval-1 : 
-
-                print('[%d / %5d] loss: %.3f' %
-                    (epoch + 1, i + 1, running_loss / log_interval))
+                print_loss = running_loss / log_interval
+                print(f'Cycle: {curr_cycle+1}/{max_cycles} Iter: {i + 1}/{max_iter} loss: {print_loss:.4f}')
                 running_loss = 0.0
         print("Epoch loss:",epoch_loss/len(dataloader))
         wandb.log({"Epoch Loss":epoch_loss/len(dataloader)})
@@ -260,7 +260,7 @@ if __name__ == '__main__':
 
     
     source = args.source
-    total_epoch = args.epochs
+    max_cycles = args.epochs
     batch_size = args.batch_size
     save_weight_dir = 'ckps/office-home'
 
@@ -286,11 +286,12 @@ if __name__ == '__main__':
     test_domains = list(sequential_train_select.keys())
     test_domains.remove(source)
 
-    for i in range(total_epoch):
+    for i in range(max_cycles):
         print(f'\n\n#### CYCLE {i+1} #####\n\n')
         for adap_module, domain_sel in sequential_train_select[source]:
             print(f'Started Distillation from Teacher {adap_module} -> to student using {domain_sel} images\n')
-            student = train_sequential_KD(student, teachers[adap_module], dom_dataloaders[domain_sel], temp_coeff=0.1, num_epoch=1, log_interval=5)
+            student = train_sequential_KD(student, teachers[adap_module], dom_dataloaders[domain_sel],
+                         curr_cycle=i, max_cycles=max_cycles, num_epoch=1, log_interval=5)
 
         if i % 10 ==0:
 
