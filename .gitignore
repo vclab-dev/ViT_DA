@@ -4,3 +4,4 @@ ckps/
 wandb/
 model/
 /__pycache__/
+TransUNet/networks/__pycache__/
