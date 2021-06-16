@@ -20,7 +20,6 @@ from sklearn.metrics import confusion_matrix
 from loss import KnowledgeDistillationLoss
 import wandb
 from tqdm import tqdm
-wandb.init(project='cycle_MTDA_ViT', entity='vclab')
 
 
 def create_teachers_student(s2t, source): 
@@ -91,7 +90,7 @@ def office_home_dataloaders(path, batch_size=32):
 
     return domain_dataloaders
 
-def test_model(model_list, dataloader):
+def test_model(model_list, dataloader, dataset_name=None):
     # print(len(dataloader))
     netF = model_list[0]
     netB = model_list[1]
@@ -116,8 +115,9 @@ def test_model(model_list, dataloader):
             total += labels.size(0)
             correct += (predicted == labels).sum().item()
             
-
-    print('Accuracy of the network on the test images: {}'.format(100 * correct / total))
+    accuracy = 100 * correct / total
+    print('Accuracy of the network on the {} images: {}'.format(dataset_name, accuracy))
+    return accuracy, correct, total
 
 def data_load(batch_size=64,txt_path='data/office-home'):
     ## prepare data
@@ -186,6 +186,7 @@ def train_sequential_KD(student_model_list, teacher_model_list, dataloader, temp
     soft = nn.Softmax(dim=1)
     list_of_params = list(netF_student.parameters()) + list(netB_student.parameters()) + list(netC_student.parameters()) 
     optimizer = optim.SGD(list_of_params, lr=0.001, momentum=0.9)
+    epoch_loss=  0.0
     for epoch in range(num_epoch):
         running_loss = 0.0
         iter_test = iter(dataloader)
@@ -212,11 +213,15 @@ def train_sequential_KD(student_model_list, teacher_model_list, dataloader, temp
             loss.backward()
             optimizer.step()
             running_loss += loss.item()
+            epoch_loss+=running_loss
             if i % log_interval == 0 : 
 
                 print('[%d / %5d] loss: %.3f' %
                     (epoch + 1, i + 1, running_loss / log_interval))
                 running_loss = 0.0
+        print("Epoch loss:",epoch_loss/len(dataloader))
+        wandb.log({"Epoch Loss":epoch_loss/len(dataloader)})
+        epoch_loss=0.0
     print('Finished Training')
 
     return [netF_student, netB_student, netC_student]
@@ -255,10 +260,44 @@ def mixed_data_load(batch_size=64,txt_path='data/office_home_mixed'):
 
     return dset_loaders
 
+def multi_domain_avg_acc(student, test_on=None):
+
+    '''
+        Given a student model and a set of domain, this func returns the avg accuracy
+
+        Input:
+            student : Student model
+            test_on : List of domain to be tested on eg ['RealWorld', 'Clipart', 'Art']
+        
+        Return:
+            Average accuracy of all domains
+    '''
+
+    if test_on is not None:
+        correct,total = [], []
+
+        for sample in test_on:
+            print(f'Testing Acc on {sample}')
+            _,corr,tot = test_model(student, dom_dataloaders[sample], dataset_name=sample)
+            correct.append(corr)
+            total.append(tot)
+
+        avg_acc = 100*sum(correct)/sum(total)
+        
+        combined_name = '_'.join(test_on)
+        print(f'\n\n Average Accuracy on {combined_name}: {avg_acc} \n\n')
+        return avg_acc
+    
+    else:
+        raise ValueError
+
+        
 
 if __name__ == '__main__':
     
-    source = 'Clipart'
+    source = 'Art'
+    wandb.init(project='cycle_MTDA_ViT', entity='vclab',name=f"{source} to others Cycle")
+
     save_weight_dir = 'ckps/office-home'
 
     save_path = f'{save_weight_dir}/{source}_to_others'
@@ -267,38 +306,35 @@ if __name__ == '__main__':
             'Product': ['PA','PC','PR'], 'RealWorld': ['RA', 'RP', 'RC']}
 
     teachers, student = create_teachers_student(s2t, source)
-    dom_dataloaders = data_load(batch_size=64) #office_home_dataloaders('data/office-home')
+    dom_dataloaders = data_load(batch_size=24) #office_home_dataloaders('data/office-home')
     # mix_dataloaders = mixed_data_load(batch_size=64)
 
     # test_model(teachers['CA'], dom_dataloaders['Art'])
     # test_model(teachers['CP'], dom_dataloaders['Product'])
     # test_model(teachers['CR'], dom_dataloaders['RealWorld'])
     # test_model(teachers['CR'], mix_dataloaders['Clipart']) 
-    cycles = 3
+    
+    total_epoch = 100
+    for i in range(total_epoch):
+        print(f'\n\n#### CYCLE {i} #####\n\n')
 
-    for i in range(cycles):
-        print(f'\n#### CYCLE {i} #####\n')
+        student = train_sequential_KD(student, teachers['AR'], dom_dataloaders['RealWorld'], temp_coeff=0.1, num_epoch=1, log_interval=5)
+        # print('Testing Acc on Art')
+        # test_model(student, dom_dataloaders['Art'])
 
-        student = train_sequential_KD(student, teachers['CA'], dom_dataloaders['Art'], temp_coeff=0.1, num_epoch=10, log_interval=5)
-        print('Testing Acc on Art')
-        test_model(student, dom_dataloaders['Art'])
+        student = train_sequential_KD(student, teachers['AC'], dom_dataloaders['Clipart'], temp_coeff=0.1, num_epoch=1, log_interval=5)
+        # print('Testing Acc on Clipart')
+        # test_model(student, dom_dataloaders['Clipart'])   
+        # print('Testing Acc on Art')
+        # test_model(student, dom_dataloaders['Art'])
 
-        student = train_sequential_KD(student, teachers['CP'], dom_dataloaders['Product'], temp_coeff=0.1, num_epoch=10, log_interval=5)
-        print('Testing Acc on Product')
-        test_model(student, dom_dataloaders['Product'])   
-        print('Testing Acc on Art')
-        test_model(student, dom_dataloaders['Art'])
-
-        student = train_sequential_KD(student, teachers['CR'], dom_dataloaders['RealWorld'], temp_coeff=0.1, num_epoch=10, log_interval=5)
-        print('Testing Acc on RealWorld')
-        test_model(student, dom_dataloaders['RealWorld'])
-        print('Testing Acc on Product')
-        test_model(student, dom_dataloaders['Product'])   
-        print('Testing Acc on Art')
-        test_model(student, dom_dataloaders['Art'])
-        
-        torch.save(student[0].state_dict(), osp.join(save_path, f"target_F_{source}.pt"))
-        torch.save(student[1].state_dict(), osp.join(save_path, f"target_B_{source}.pt"))
-        torch.save(student[2].state_dict(), osp.join(save_path, f"target_C_{source}.pt"))
-
-        
+        student = train_sequential_KD(student, teachers['AP'], dom_dataloaders['Product'], temp_coeff=0.1, num_epoch=1, log_interval=5)
+        if i % 10 ==0:
+            test_domains = ['Product', 'Clipart', 'RealWorld']
+            avg_acc = multi_domain_avg_acc(student,test_on=test_domains)
+            
+            wandb.log({"avg_acc":avg_acc, 'cycle': i})
+    
+            torch.save(student[0].state_dict(), osp.join(save_path, f"target_F_{source}.pt"))
+            torch.save(student[1].state_dict(), osp.join(save_path, f"target_B_{source}.pt"))
+            torch.save(student[2].state_dict(), osp.join(save_path, f"target_C_{source}.pt"))
