@@ -27,7 +27,7 @@ np.random.seed(0)
 random.seed(0)
 torch.manual_seed(0)
 
-def create_teachers_student(s2t, source, student_arch='rn50'): 
+def create_teachers_student(args, s2t, source, student_arch='rn50'): 
 
     '''
         Create ensemble of teachers and one student model 
@@ -44,13 +44,13 @@ def create_teachers_student(s2t, source, student_arch='rn50'):
         netB = network.feat_bootleneck(type='bn', feature_dim=netF.in_features,bottleneck_dim=256).cuda()
         netC = network.feat_classifier(type='wn', class_num=65, bottleneck_dim=256).cuda()
 
-        modelpathF = f'ckps/target/uda/office-home/{dom_adapts}/target_F_par_0.3.pt'
+        modelpathF = f'{args.adapted_wt_dir}/{dom_adapts}/target_F_par_0.3.pt'
         netF.load_state_dict(torch.load(modelpathF))
 
-        modelpathB = f'ckps/target/uda/office-home/{dom_adapts}/target_B_par_0.3.pt'
+        modelpathB = f'{args.adapted_wt_dir}/{dom_adapts}/target_B_par_0.3.pt'
         netB.load_state_dict(torch.load(modelpathB))
 
-        modelpathC = f'ckps/target/uda/office-home/{dom_adapts}/target_C_par_0.3.pt'
+        modelpathC = f'{args.adapted_wt_dir}/{dom_adapts}/target_C_par_0.3.pt'
         netC.load_state_dict(torch.load(modelpathC))
         
         netF.eval()
@@ -255,6 +255,7 @@ if __name__ == '__main__':
     parser.add_argument('-e', '--epochs', default=100, type=int,help='select number of cycles')
     parser.add_argument('-w', '--use_wandb', default=0, type=int,help='Log to wandb or not [0 - dont use | 1 - use]')
     parser.add_argument('-a', '--arch', default='rn50', type=str,help='Select student vit or rn50 based (default: rn50)')
+    parser.add_argument('-l', '--adapted_wt_dir', default='BMVC_SFMTDA/uda/office-home', type=str,help='Load 1S1T  adapted wts')
     
     args = parser.parse_args()
 
@@ -262,10 +263,10 @@ if __name__ == '__main__':
     source = args.source
     max_cycles = args.epochs
     batch_size = args.batch_size
-    save_weight_dir = 'ckps/office-home'
+    save_weight_dir = 'ckps/office-home-BMVC-MTDA-rn50'
 
     mode = 'online' if args.use_wandb else 'disabled'
-    wandb.init(project='cycle_MTDA_ViT', entity='vclab',name=f"{source} to others {args.arch}", mode=mode)
+    wandb.init(project='Final_MTDA_BMVC_OfficeHome', entity='vclab',name=f"{source} 2 {args.arch}", mode=mode)
     
     save_path = f'{save_weight_dir}/{source}_to_others'
     os.makedirs(save_path,exist_ok=True)
@@ -274,7 +275,8 @@ if __name__ == '__main__':
     s2t = {'Art' : ['AC', 'AP', 'AR'], 'Clipart': ['CA', 'CP', 'CR'], 
             'Product': ['PA','PC','PR'], 'RealWorld': ['RA', 'RP', 'RC']}
 
-    teachers, student = create_teachers_student(s2t, source, student_arch=args.arch)
+    teachers, student = create_teachers_student(args, s2t, source, student_arch=args.arch)
+
     dom_dataloaders = data_load(batch_size=batch_size) 
 
     sequential_train_select = { 'Art': [['AC', 'Clipart'], ['AP', 'Product'], ['AR', 'RealWorld']],
