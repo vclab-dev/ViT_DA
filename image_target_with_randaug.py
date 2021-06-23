@@ -7,6 +7,7 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from torchvision import transforms
+from wandb.sdk.lib import disabled
 import network, loss
 from torch.utils.data import DataLoader
 from data_list import ImageList, ImageList_idx
@@ -546,7 +547,7 @@ if __name__ == "__main__":
     parser.add_argument('--output_src', type=str, default='san')
     parser.add_argument('--da', type=str, default='uda', choices=['uda', 'pda'])
     parser.add_argument('--issave', type=bool, default=True)
-    parser.add_argument('--wandb', type=bool, default=False)
+    parser.add_argument('--wandb', type=int, default=0)
     args = parser.parse_args()
 
     if args.dset == 'office-home':
@@ -579,9 +580,14 @@ if __name__ == "__main__":
         args.s_dset_path = folder + args.dset + '/' + names[args.s] + '_list.txt'
         args.t_dset_path = folder + args.dset + '/' + names[args.t] + '_list.txt'
         args.test_dset_path = folder + args.dset + '/' + names[args.t] + '_list.txt'
+        print(args.wandb)
         if args.wandb:
-            import wandb
-            wandb.init(project='BMVC-MTDA', entity='vclab', name=f'Im+pseudo CE {names[args.s]} to {names[args.t]}', reinit=True)
+            mode = 'online'
+        else:
+            mode = 'disabled'
+
+        import wandb
+        wandb.init(project='BMVC_MTDA_SF', entity='vclab', name=f'{names[args.s]} to {names[args.t]}', reinit=True, mode=mode)
 
         if args.dset == 'office-home':
             args.num_class = 65
@@ -607,4 +613,3 @@ if __name__ == "__main__":
         args.out_file.write(print_args(args) + '\n')
         args.out_file.flush()
         train_target(args)
-        exit(0)
