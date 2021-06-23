@@ -12,7 +12,12 @@ def Entropy(input_):
     entropy = -input_ * torch.log(input_ + epsilon)
     entropy = torch.sum(entropy, dim=1)
     return entropy 
-
+def soft_CE(softout, soft_label):
+    bs = softout.size(0)
+    epsilon = 1e-5
+    loss = -soft_label * torch.log(softout + epsilon)
+    total_loss = torch.sum(loss, dim=1)
+    return total_loss
 def grl_hook(coeff):
     def fun1(grad):
         return -coeff*grad.clone()
@@ -200,7 +205,7 @@ class SCELoss(torch.nn.Module):
 
 
 class KnowledgeDistillationLoss(nn.Module):
-    def __init__(self, reduction='mean', alpha=-1.):
+    def __init__(self, reduction='mean', alpha=-1.0):
         super().__init__()
         self.reduction = reduction
         self.alpha = alpha
@@ -210,6 +215,7 @@ class KnowledgeDistillationLoss(nn.Module):
 
         outputs = torch.log_softmax(inputs, dim=1)
         labels = torch.softmax(targets * self.alpha, dim=1)
+        #labels = targets*self.alpha
 
         loss = (outputs * labels).mean(dim=1)
 
