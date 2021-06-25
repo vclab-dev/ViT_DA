@@ -12,7 +12,8 @@ sns.set(style="darkgrid")
 save_dir = 'tsne_plots_cuda'
 store = np.load('saved_features/amazon_features.npy', allow_pickle=True)
 
-###             [[feat,cls], [feat,cls] ...]
+### [[feat_1,label_1], [feat_2,label_2] ... [feat_n, label_n]] ---> Everything except label is np array
+
 
 shutil.rmtree(save_dir)
 os.mkdir(save_dir)
