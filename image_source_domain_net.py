@@ -366,7 +366,7 @@ if __name__ == "__main__":
         args.class_num = 10
 
     if args.dset =='domain_net':
-        names = ['clipart', 'infograph', 'painting', 'quickdraw' 'sketch']
+        names = ['clipart', 'infograph', 'painting', 'quickdraw', 'sketch']
         args.class_num = 345
 
     os.environ["CUDA_VISIBLE_DEVICES"] = args.gpu_id
