@@ -366,7 +366,7 @@ if __name__ == "__main__":
         args.class_num = 10
 
     if args.dset =='domain_net':
-        names = ['clipart', 'infograph', 'painting', 'quickdraw' 'sketch']
+        names = ['clipart', 'infograph', 'painting', 'quickdraw', 'sketch']
         args.class_num = 345
 
     os.environ["CUDA_VISIBLE_DEVICES"] = args.gpu_id
@@ -409,8 +409,10 @@ if __name__ == "__main__":
         args.name = names[args.s][0].upper() + names[args.t][0].upper()
 
         folder = './data/'
-        args.s_dset_path = folder + args.dset + '/' + names[args.s] + '_list.txt'
-        args.test_dset_path = folder + args.dset + '/' + names[args.t] + '_list.txt'
+        # args.s_dset_path = folder + args.dset + '/' + names[args.s] + '_list.txt'
+        # args.test_dset_path = folder + args.dset + '/' + names[args.t] + '_list.txt'
+        args.s_dset_path = folder + args.dset + '/' + 'domain_net_label' + '/' + names[args.s] + '_train.txt'
+        args.test_dset_path = folder + args.dset + '/' + 'domain_net_label' + '/' + names[args.t] + '_train.txt'
         # wandb.init(project='vit_da', entity='vclab', name=f'SRC Train: {names[args.s]}', reinit=True)
 
         test_target(args)
