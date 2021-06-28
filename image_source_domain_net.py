@@ -331,7 +331,7 @@ if __name__ == "__main__":
     parser.add_argument('--gpu_id', type=str, nargs='?', default='0', help="device id to run")
     parser.add_argument('--s', type=int, default=2, help="source")
     parser.add_argument('--t', type=int, default=0, help="target")
-    parser.add_argument('--max_epoch', type=int, default=20, help="max iterations")
+    parser.add_argument('--max_epoch', type=int, default=50, help="max iterations")
     parser.add_argument('--batch_size', type=int, default=64, help="batch_size")
     parser.add_argument('--worker', type=int, default=4, help="number of workers")
     parser.add_argument('--dset', type=str, default='office', choices=['domain_net','VISDA-C', 'office', 'office-home', 'office-caltech'])
@@ -366,7 +366,7 @@ if __name__ == "__main__":
         args.class_num = 10
 
     if args.dset =='domain_net':
-        names = ['clipart', 'infograph', 'painting', 'quickdraw', 'sketch']
+        names = ['clipart', 'infograph', 'painting', 'quickdraw', 'sketch', 'real']
         args.class_num = 345
 
     os.environ["CUDA_VISIBLE_DEVICES"] = args.gpu_id
