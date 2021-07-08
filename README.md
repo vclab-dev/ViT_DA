@@ -1,4 +1,4 @@
-# Official implementation for TransDA
+# Source-Free Multi-Target Domain Adaptation
 Official pytorch implementation for **Knowledge Distillation based Source-Free Multi-Target Domain Adaptation**.
 
 ## Prepare pretrain model
