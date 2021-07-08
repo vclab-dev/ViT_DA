@@ -2,7 +2,7 @@
 Official pytorch implementation for **Knowledge Distillation based Source-Free Multi-Target Domain Adaptation**.
 
 ## Prepare pretrain model
-We choose R50-ViT-B_16 as our encoder.
+We choose R50-ViT-B_16 as our backbone.
 ```bash root transformerdepth
 wget https://storage.googleapis.com/vit_models/imagenet21k/R50+ViT-B_16.npz 
 mkdir ./model/vit_checkpoint/imagenet21k 
@@ -36,69 +36,73 @@ sh final_scripts/3_KD_MTDA.sh
  ```
 
 ## Prerequisites:
-- python == 3.6.8
-- pytorch ==1.1.0
-- torchvision == 0.3.0
-- numpy, scipy, sklearn, PIL, argparse, tqdm
 
+- See [requirements.txt](requirements.txt)
+- Install dependencies using `pip3 install -r requirements.txt`
 
 ## Dataset directory
+<details>
+  <summary>Click to see full directory tree</summary>
 
 ```
-├── domain_net
-│   ├── clipart
-│   ├── clipart.txt
-│   ├── infograph
-│   ├── infograph.txt
-│   ├── painting
-│   ├── painting.txt
-│   ├── quickdraw
-│   ├── quickdraw.txt
-│   ├── real
-│   ├── real.txt
-│   ├── sketch
-│   └── sketch.txt
-├── office
-│   ├── amazon
-│   ├── amazon.txt
-│   ├── dslr
-│   ├── dslr.txt
-│   ├── webcam
-│   └── webcam.txt
-├── office-home
-│   ├── Art
-│   ├── Art.txt
-│   ├── Clipart
-│   ├── Clipart.txt
-│   ├── Product
-│   ├── Product.txt
-│   ├── Real_World
-│   └── RealWorld.txt
-├── office_home_mixed
-│   ├── Art_Clipart_Product
-│   ├── Art_Clipart_Product.txt
-│   ├── Art_Clipart_Real_World
-│   ├── Art_Clipart_Real_World.txt
-│   ├── Art_Product_Real_World
-│   ├── Art_Product_Real_World.txt
-│   ├── Clipart_Product_Real_World
-│   └── Clipart_Product_Real_World.txt
-└── pacs
-    ├── art_painting
-    ├── art_painting.txt
-    ├── cartoon
-    ├── cartoon.txt
-    ├── __MACOSX
-    ├── photo
-    ├── photo.txt
-    ├── sketch
-    └── sketch.txt
+    ├── domain_net
+    │   ├── clipart
+    │   ├── clipart.txt
+    │   ├── infograph
+    │   ├── infograph.txt
+    │   ├── painting
+    │   ├── painting.txt
+    │   ├── quickdraw
+    │   ├── quickdraw.txt
+    │   ├── real
+    │   ├── real.txt
+    │   ├── sketch
+    │   └── sketch.txt
+    ├── office
+    │   ├── amazon
+    │   ├── amazon.txt
+    │   ├── dslr
+    │   ├── dslr.txt
+    │   ├── webcam
+    │   └── webcam.txt
+    ├── office-home
+    │   ├── Art
+    │   ├── Art.txt
+    │   ├── Clipart
+    │   ├── Clipart.txt
+    │   ├── Product
+    │   ├── Product.txt
+    │   ├── Real_World
+    │   └── RealWorld.txt
+    ├── office_home_mixed
+    │   ├── Art_Clipart_Product
+    │   ├── Art_Clipart_Product.txt
+    │   ├── Art_Clipart_Real_World
+    │   ├── Art_Clipart_Real_World.txt
+    │   ├── Art_Product_Real_World
+    │   ├── Art_Product_Real_World.txt
+    │   ├── Clipart_Product_Real_World
+    │   └── Clipart_Product_Real_World.txt
+    └── pacs
+        ├── art_painting
+        ├── art_painting.txt
+        ├── cartoon
+        ├── cartoon.txt
+        ├── __MACOSX
+        ├── photo
+        ├── photo.txt
+        ├── sketch
+        └── sketch.txt
 ```
+</details>
 
-# Reference
+## Contributers
+- [Rohit Lal](https://rohitlal.net) 
+- [Amandeep Kumar](https://github.com/VIROBO-15)
+- [Vikash Kumar](https://github.com/vikash0837)
 
-[ViT](https://github.com/jeonsworld/ViT-pytorch)
-[TransUNet](https://github.com/Beckschen/TransUNet)
-[SHOT](https://github.com/tim-learn/SHOT)
+## Code Reference
 
-# Contributers
+- [ViT](https://github.com/jeonsworld/ViT-pytorch)
+- [TransUNet](https://github.com/Beckschen/TransUNet)
+- [SHOT](https://github.com/tim-learn/SHOT)
