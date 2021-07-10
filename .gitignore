@@ -11,3 +11,5 @@ san/*
 ckps_res50
 BMVC_SFMTDA
 original_checkpoint
+*.pt
+log_*

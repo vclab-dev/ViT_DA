@@ -88,25 +88,7 @@ def data_load(args):
     train_bs = args.batch_size
     txt_tar = open(args.t_dset_path).readlines()
     txt_test = open(args.test_dset_path).readlines()
-
-    if not args.da == 'uda':
-        label_map_s = {}
-        for i in range(len(args.src_classes)):
-            label_map_s[args.src_classes[i]] = i
-
-        new_tar = []
-        for i in range(len(txt_tar)):
-            rec = txt_tar[i]
-            reci = rec.strip().split(' ')
-            if int(reci[1]) in args.tar_classes:
-                if int(reci[1]) in args.src_classes:
-                    line = reci[0] + ' ' + str(label_map_s[int(reci[1])]) + '\n'
-                    new_tar.append(line)
-                else:
-                    line = reci[0] + ' ' + str(len(label_map_s)) + '\n'
-                    new_tar.append(line)
-        txt_tar = new_tar.copy()
-        txt_test = txt_tar.copy()
+    txt_eval_dn = open(args.txt_eval_dn).readlines()
 
     dsets["target"] = ImageList_idx(txt_tar, transform=image_train())
     dset_loaders["target"] = DataLoader(dsets["target"], batch_size=train_bs, shuffle=True, num_workers=args.worker,
@@ -117,12 +99,14 @@ def data_load(args):
     dsets["strong_aug"] = ImageList_idx(txt_test, transform=strong_augment())
     dset_loaders["strong_aug"] = DataLoader(dsets["strong_aug"], batch_size=train_bs * 3, shuffle=False, num_workers=args.worker,
                                        drop_last=False)
-    # dsets["mixed"] = torch.utils.data.ConcatDataset([dsets["target"],dsets["strong_aug"]])
-    # dset_loaders["mixed"] = DataLoader(dsets["mixed"], batch_size=2*8, shuffle=False, num_workers=args.worker,
-    #                                     drop_last=False)
+    if args.dset =='domain_net':
+        dsets["eval_dn"] = ImageList_idx(txt_eval_dn, transform=image_train())
+        dset_loaders["eval_dn"] = DataLoader(dsets["eval_dn"], batch_size=train_bs, shuffle=False, num_workers=args.worker,
+                                            drop_last=False)
+    else:
+        dset_loaders["eval_dn"] = dset_loaders["test"]
 
     return dset_loaders,dsets
-
 
 def cal_acc(loader, netF, netB, netC, flag=False):
     start_test = True
@@ -169,6 +153,7 @@ def get_pseudo_gt(data_batch, netB, netF,netC):
 def get_strong_aug(dataset, idx):
     aug_img = torch.cat([dataset[i][0].unsqueeze(dim=0) for i in idx],dim=0)
     return aug_img
+
 def train_target(args):
     dset_loaders,dsets = data_load(args)
     # get strong aug in a list
@@ -374,16 +359,16 @@ def train_target(args):
         if iter_num % interval_iter == 0 or iter_num == max_iter:
             netF.eval()
             netB.eval()
-
-            acc_s_te, _ = cal_acc(dset_loaders['test'], netF, netB, netC, False)
-            log_str = 'Task: {}, Iter:{}/{}; Accuracy using student = {:.2f}%'.format(args.name, iter_num, max_iter, acc_s_te)
+            acc_eval_dn, _ = cal_acc(dset_loaders["eval_dn"], netF, netB, netC, False)
+            log_str = '\nTask: {}, Iter:{}/{}; Final Eval test = {:.2f}%'.format(args.name, iter_num, max_iter, acc_eval_dn)
             # acc_t_te, _ = cal_acc(dset_loaders['test'], netF_t.eval(), netB_t.eval(), netC, False)
-            # log_str = 'Task: {}, Iter:{}/{}; Accuracy using teacher = {:.2f}%'.format(args.name, iter_num, max_iter, acc_t_te)
+            # log_str = 'Task: {}, Iter:{}/{}; Accuracy using teacher = {:.2f}%'.format(args.name, iter_num, max_iter, acc_t_te)            
             if args.wandb:
-                wandb.log({"Student Accuracy":acc_s_te})
+                wandb.log({"STDA_Accuracy":acc_s_te})
                 torch.save(netF.state_dict(), osp.join(args.output_dir, "target_F_" + args.savename + ".pt"))
                 torch.save(netB.state_dict(), osp.join(args.output_dir, "target_B_" + args.savename + ".pt"))
                 torch.save(netC.state_dict(), osp.join(args.output_dir, "target_C_" + args.savename + ".pt"))
+                print('model saved')
                 #exit(0)
 
             args.out_file.write(log_str + '\n')
@@ -598,7 +583,10 @@ if __name__ == "__main__":
         args.s_dset_path = folder + args.dset + '/' + names[args.s] + '.txt'
         args.test_dset_path = folder + args.dset + '/' + names[args.t] + '.txt'
         args.t_dset_path = folder + args.dset + '/' + names[args.t] + '.txt'
-        
+        if args.dset =='domain_net':
+            args.txt_eval_dn = folder + args.dset + '/' + names[args.t] + '_test.txt'
+        else:
+            args.txt_eval_dn = args.t_dset_path
 
         mode = 'online' if args.wandb else 'disabled'
         
