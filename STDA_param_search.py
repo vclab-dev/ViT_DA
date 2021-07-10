@@ -364,8 +364,8 @@ def train_target(args):
             netF.eval()
             netB.eval()
 
-            acc_s_te, _ = cal_acc(dset_loaders['test'], netF, netB, netC, False)
-            log_str = 'Task: {}, Iter:{}/{}; Accuracy using student = {:.2f}%'.format(args.name, iter_num, max_iter, acc_s_te)
+            # acc_s_te, _ = cal_acc(dset_loaders['test'], netF, netB, netC, False)
+            # log_str = 'Task: {}, Iter:{}/{}; Accuracy using student = {:.2f}%'.format(args.name, iter_num, max_iter, acc_s_te)
 
             acc_eval_dn, _ = cal_acc(dset_loaders['eval_dn'], netF, netB, netC, False)
             log_str = 'Task: {}, Iter:{}/{}; Final Eval test = {:.2f}%'.format(args.name, iter_num, max_iter, acc_eval_dn)
@@ -375,8 +375,7 @@ def train_target(args):
             # log_str = 'Task: {}, Iter:{}/{}; Accuracy using teacher = {:.2f}%'.format(args.name, iter_num, max_iter, acc_t_te)
             if args.wandb:
 
-                wandb.log({"Student_Accuracy":acc_s_te,
-                            "Student_Accuracy_Test_DN": acc_eval_dn})
+                wandb.log({"Student_Accuracy_Test_DN": acc_eval_dn})
 
                 torch.save(netF.state_dict(), osp.join(args.output_dir, "target_F_" + args.savename + ".pt"))
                 torch.save(netB.state_dict(), osp.join(args.output_dir, "target_B_" + args.savename + ".pt"))
@@ -521,10 +520,10 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Rand-Augment')
     parser.add_argument('--gpu_id', type=str, nargs='?', default='0', help="device id to run")
     parser.add_argument('--s', type=int, default=5, help="source")
-    parser.add_argument('--t', type=int, default=4, help="target")
-    parser.add_argument('--max_epoch', type=int, default=5, help="max iterations")
+    parser.add_argument('--t', type=int, default=0, help="target")
+    parser.add_argument('--max_epoch', type=int, default=2, help="max iterations")
     parser.add_argument('--interval', type=int, default=15)
-    parser.add_argument('--batch_size', type=int, default=32, help="batch_size")
+    parser.add_argument('--batch_size', type=int, default=16, help="batch_size")
     parser.add_argument('--worker', type=int, default=2, help="number of workers")
     parser.add_argument('--dset', type=str, default='domain_net',
                         choices=['VISDA-C', 'office', 'office-home', 'office-caltech', 'pacs', 'domain_net'])
@@ -604,7 +603,7 @@ if __name__ == "__main__":
     mode = 'online' if args.wandb else 'disabled'
     
     import wandb
-    wandb_n = f'{names[args.s]}2{names[args.t]} cls_par:{args.cls_par} ent_par:{args.ent_par} const_par:{args.const_par} thresh:{args.threshold} lr:{args.lr}'
+    wandb_n = f'cls_par:{args.cls_par} ent_par:{args.ent_par} const_par:{args.const_par} thresh:{args.threshold} lr:{args.lr} {names[args.s]}2{names[args.t]}'
     wandb.init(config=args, name=wandb_n,mode=mode)
     
     config = wandb.config
