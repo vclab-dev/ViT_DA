@@ -270,10 +270,16 @@ def train_source(args):
             print(log_str+'\n')
 
             if acc_s_te >= acc_init:
+
                 acc_init = acc_s_te
                 best_netF = netF.state_dict()
                 best_netB = netB.state_dict()
                 best_netC = netC.state_dict()
+
+                torch.save(best_netF, osp.join(args.output_dir_src, "source_F.pt"))
+                torch.save(best_netB, osp.join(args.output_dir_src, "source_B.pt"))
+                torch.save(best_netC, osp.join(args.output_dir_src, "source_C.pt"))
+                print('Model Saved!!')
 
             netF.train()
             netB.train()
@@ -282,6 +288,7 @@ def train_source(args):
     torch.save(best_netF, osp.join(args.output_dir_src, "source_F.pt"))
     torch.save(best_netB, osp.join(args.output_dir_src, "source_B.pt"))
     torch.save(best_netC, osp.join(args.output_dir_src, "source_C.pt"))
+    print('Final Model Saved!!')
 
     return netF, netB, netC
 
