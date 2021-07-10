@@ -364,7 +364,7 @@ def train_target(args):
             # acc_t_te, _ = cal_acc(dset_loaders['test'], netF_t.eval(), netB_t.eval(), netC, False)
             # log_str = 'Task: {}, Iter:{}/{}; Accuracy using teacher = {:.2f}%'.format(args.name, iter_num, max_iter, acc_t_te)            
             if args.wandb:
-                wandb.log({"STDA_Accuracy":acc_s_te})
+                wandb.log({"STDA_Test_Accuracy":acc_eval_dn})
                 torch.save(netF.state_dict(), osp.join(args.output_dir, "target_F_" + args.savename + ".pt"))
                 torch.save(netB.state_dict(), osp.join(args.output_dir, "target_B_" + args.savename + ".pt"))
                 torch.save(netC.state_dict(), osp.join(args.output_dir, "target_C_" + args.savename + ".pt"))
