@@ -71,14 +71,6 @@ def data_load(batch_size=64,txt_path='domain_net_data'):
 
     return dset_loaders
 
-def dist_loss(t, s, T=0.1):
-    soft = nn.Softmax(dim=1)
-
-    prob_t = soft(t/T)
-    log_prob_s = nn.LogSoftmax( dim=1)(s)
-    dist_loss = -(prob_t*log_prob_s).sum(dim=1).mean()
-    return dist_loss
-
 def multi_domain_avg_acc(student, test_on=None):
 
     '''
@@ -118,10 +110,8 @@ if __name__ == '__main__':
 
     # training parameters
     parser.add_argument('-b', '--batch_size', default=512, type=int,help='mini-batch size (default: 32)')
-    # parser.add_argument('-s', '--source', type=str,help='Give source name')
     parser.add_argument('-e', '--epochs', default=100, type=int,help='select number of cycles')
     parser.add_argument('-a', '--arch', default='vit', type=str,help='Select model type vit or rn50 based')
-    # parser.add_argument('-l', '--adapted_wt_dir',required=True, type=str,help='Load 1S1T adapted wts')
     
     args = parser.parse_args()
     
@@ -156,4 +146,4 @@ if __name__ == '__main__':
     # avg_acc = multi_domain_avg_acc(model_list, test_on=['infograph', 'clipart', 'quickdraw', 'painting', 'real'])
 
     ## For testing on single Domain (Uncomment Below)
-    accuracy, correct, total = test_model(model_list, dom_dataloaders['clipart'],args, dataset_name='clipart')     
+    accuracy, correct, total = test_model(model_list, dom_dataloaders['clipart'],args, dataset_name='clipart')

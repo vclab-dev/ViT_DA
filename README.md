@@ -113,6 +113,7 @@ Changes to be done in code
 - saved model path
 - model type
 - domain/list of domain in function `multi_domain_avg_acc()` or `test_model()`
+- update `bottleneck_dim` variable as per your training model
 
 ## Contributers
 - [Rohit Lal](https://rohitlal.net) 
