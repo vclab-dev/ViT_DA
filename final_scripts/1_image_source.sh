@@ -1,11 +1,11 @@
 #Office-31
-python image_source_final.py --trte val --output ckps/source/  --gpu_id 0 --dset office --max_epoch 100 --s 0 --net vit --se True ;
+python image_source_final.py --trte val --output san --gpu_id 0 --dset office --max_epoch 50 --s 0 --net vit
 
 #office-home
-python image_source_final.py --trte val --output ckps/source/  --gpu_id 0 --dset office-home --max_epoch 100 --s 0 --net vit --se True ;
+python image_source_final.py --trte val --output san --gpu_id 0 --dset office-home --max_epoch 50 --s 0 --net vit
 
 #pacs
-python image_source_final.py --trte val --output ckps/source/  --gpu_id 0 --dset pacs --max_epoch 100 --s 0 --net vit --se True ;
+python image_source_final.py --trte val --output san --gpu_id 0 --dset pacs --max_epoch 50 --s 0 --net vit
 
 #domain_net
-python image_source_final.py --trte val --output ckps/source/  --gpu_id 0 --dset domain-net --max_epoch 100 --s 0 --net vit --se True ;
+python image_source_final.py --trte val --output san --gpu_id 0 --dset domain_net --max_epoch 50 --s 3 --net vit
