@@ -102,6 +102,18 @@ sh final_scripts/2_STDA.sh
 sh final_scripts/3_KD_MTDA.sh
  ```
 
+### Testing 
+
+For testing any model use the [test_model_acc.py](test_model_acc.py) code. There are two function
+- `multi_domain_avg_acc()` : Gives average acc across all domains (equal weight to all domains irrespective of images)
+- `test_model()` : Testing on single domain
+
+Changes to be done in code
+- txt files
+- saved model path
+- model type
+- domain/list of domain in function `multi_domain_avg_acc()` or `test_model()`
+
 ## Contributers
 - [Rohit Lal](https://rohitlal.net) 
 - [Amandeep Kumar](https://github.com/VIROBO-15)
