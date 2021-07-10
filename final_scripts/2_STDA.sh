@@ -1,15 +1,15 @@
 
 ################ STDA for sketch (DomiainNet) ['clipart', 'infograph', 'painting', 'quickdraw', 'sketch', 'real']
 
-python STDA.py --cls_par 0.3 --batch_size 64 --dset domain_net --gpu_id 0 --output delete --output_src san --s 4 --t 0 --wandb 0 --worker 0 
+python STDA.py --batch_size 16 --dset domain_net --gpu_id 0 --output optimised_STDA_wt --max_epoch 1 --output_src san --s 5 --t 0 --wandb 0 --worker 4 
 
-python STDA.py --cls_par 0.3 --batch_size 64 --dset domain_net --gpu_id 0 --output delete --output_src san --s 4 --t 1 --wandb 0 --worker 0
+python STDA.py --batch_size 16 --dset domain_net --gpu_id 0 --output optimised_STDA_wt --max_epoch 1 --output_src san --s 5 --t 1 --wandb 0 --worker 4
 
-python STDA.py --cls_par 0.3 --batch_size 64 --dset domain_net --gpu_id 0 --output delete --output_src san --s 4 --t 2 --wandb 0 --worker 0
+python STDA.py --batch_size 16 --dset domain_net --gpu_id 0 --output optimised_STDA_wt --max_epoch 1 --output_src san --s 5 --t 2 --wandb 0 --worker 4
 
-python STDA.py --cls_par 0.3 --batch_size 64 --dset domain_net --gpu_id 0 --output delete --output_src san --s 4 --t 3 --wandb 0 --worker 0
+python STDA.py --batch_size 16 --dset domain_net --gpu_id 0 --output optimised_STDA_wt --max_epoch 1 --output_src san --s 5 --t 3 --wandb 0 --worker 4
 
-python STDA.py --cls_par 0.3 --batch_size 64 --dset domain_net --gpu_id 0 --output delete --output_src san --s 4 --t 5 --wandb 0 --worker 0 
+python STDA.py --batch_size 16 --dset domain_net --gpu_id 0 --output optimised_STDA_wt --max_epoch 1 --output_src san --s 5 --t 4 --wandb 0 --worker 4 
 
 ################ STDA for webcam (Office31)  ['amazon', 'dslr', 'webcam']
 

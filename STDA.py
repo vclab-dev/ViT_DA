@@ -172,10 +172,8 @@ def get_strong_aug(dataset, idx):
 def train_target(args):
     dset_loaders,dsets = data_load(args)
     # get strong aug in a list
-    print('Concatenatination started')
     # strong_aug_loader = iter(dset_loaders["strong_aug"])
     # strong_aug_list = torch.cat([strong_aug_loader.next()[0] for i in range(len(strong_aug_loader))], dim=0) # return total_sample*3*224*224
-    print('Concatenated :)')
     ## set base network
     if args.net[0:3] == 'res':
         netF = network.ResBase(res_name=args.net, se=args.se, nl=args.nl).cuda()
@@ -351,7 +349,7 @@ def train_target(args):
                 soft_label_norm = torch.norm(softmax_out[0:args.batch_size]*expectation_ratio,dim=1,keepdim=True)
                 soft_label = (softmax_out[0:args.batch_size]*expectation_ratio)/soft_label_norm
                 #print(soft_label.shape)
-            consistency_loss = 0.1*torch.mean(loss.soft_CE(softmax_out[args.batch_size:],soft_label))
+            consistency_loss = args.const_par*torch.mean(loss.soft_CE(softmax_out[args.batch_size:],soft_label))
             #print("=====================::",consistency_loss)
             cs_loss = consistency_loss.item()
             #print("cls loss:{} en loss:{} gen loss:{} im_loss:{} consistancy_loss:{}".format(classifier_loss.item(), en_loss, gen_loss, im_loss.item(),cs_loss))
@@ -533,7 +531,7 @@ if __name__ == "__main__":
     parser.add_argument('--worker', type=int, default=4, help="number of workers")
     parser.add_argument('--dset', type=str, default='office-home',
                         choices=['VISDA-C', 'office', 'office-home', 'office-caltech', 'pacs', 'domain_net'])
-    parser.add_argument('--lr', type=float, default=1e-2, help="learning rate")
+    parser.add_argument('--lr', type=float, default=1e-3, help="learning rate")
     parser.add_argument('--net', type=str, default='vit', help="alexnet, vgg16, resnet50, res101")
     parser.add_argument('--seed', type=int, default=2020, help="random seed")
 
@@ -545,7 +543,9 @@ if __name__ == "__main__":
 
     parser.add_argument('--threshold', type=int, default=0)
     parser.add_argument('--cls_par', type=float, default=0.3)
-    parser.add_argument('--ent_par', type=float, default=1.0)
+    parser.add_argument('--const_par', type=float, default=0.2)
+    parser.add_argument('--ent_par', type=float, default=1.3)
+
     parser.add_argument('--lr_decay1', type=float, default=0.1)
     parser.add_argument('--lr_decay2', type=float, default=1.0)
 
@@ -603,7 +603,7 @@ if __name__ == "__main__":
         mode = 'online' if args.wandb else 'disabled'
         
         import wandb
-        wandb.init(project='STDA_training', entity='vclab', name=f'{names[args.s]} to {names[args.t]} three epoch only', reinit=True,mode=mode)
+        wandb.init(project='Tuned_STDA_DomainNet', entity='vclab', name=f'{names[args.s]} to {names[args.t]}', reinit=True,mode=mode)
 
         args.output_dir_src = osp.join(args.output_src, args.da, args.dset, names[args.s][0].upper())
         args.output_dir = osp.join(args.output, 'STDA', args.dset, names[args.s][0].upper() + names[args.t][0].upper())
