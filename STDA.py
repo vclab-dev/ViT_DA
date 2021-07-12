@@ -375,7 +375,7 @@ def train_target(args):
 
             if args.earlystop:
                 print('Stopping Early!')
-                exit(0)
+                return netF, netB, netC
 
             netF.train()
             netB.train()
