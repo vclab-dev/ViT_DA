@@ -339,8 +339,7 @@ def train_target(args):
             cs_loss = consistency_loss.item()
             #print("cls loss:{} en loss:{} gen loss:{} im_loss:{} consistancy_loss:{}".format(classifier_loss.item(), en_loss, gen_loss, im_loss.item(),cs_loss))
             classifier_loss += consistency_loss
-        if args.wandb:
-            wandb.log({"cls loss":classifier_loss.item(), "en loss":en_loss, "gen loss":gen_loss, "im_loss":im_loss})
+        wandb.log({"cls loss":classifier_loss.item(), "en loss":en_loss, "gen loss":gen_loss, "im_loss":im_loss})
             
 
         #classifier_loss = L2(outputs_stg,outputs_test)
@@ -360,20 +359,24 @@ def train_target(args):
             netF.eval()
             netB.eval()
             acc_eval_dn, _ = cal_acc(dset_loaders["eval_dn"], netF, netB, netC, False)
+            wandb.log({"STDA_Test_Accuracy":acc_eval_dn})
+
             log_str = '\nTask: {}, Iter:{}/{}; Final Eval test = {:.2f}%'.format(args.name, iter_num, max_iter, acc_eval_dn)
             # acc_t_te, _ = cal_acc(dset_loaders['test'], netF_t.eval(), netB_t.eval(), netC, False)
             # log_str = 'Task: {}, Iter:{}/{}; Accuracy using teacher = {:.2f}%'.format(args.name, iter_num, max_iter, acc_t_te)            
-            if args.wandb:
-                wandb.log({"STDA_Test_Accuracy":acc_eval_dn})
-                torch.save(netF.state_dict(), osp.join(args.output_dir, "target_F_" + args.savename + ".pt"))
-                torch.save(netB.state_dict(), osp.join(args.output_dir, "target_B_" + args.savename + ".pt"))
-                torch.save(netC.state_dict(), osp.join(args.output_dir, "target_C_" + args.savename + ".pt"))
-                print('model saved')
-                #exit(0)
+            torch.save(netF.state_dict(), osp.join(args.output_dir, "target_F_" + args.savename + ".pt"))
+            torch.save(netB.state_dict(), osp.join(args.output_dir, "target_B_" + args.savename + ".pt"))
+            torch.save(netC.state_dict(), osp.join(args.output_dir, "target_C_" + args.savename + ".pt"))
+            print('model saved')
 
             args.out_file.write(log_str + '\n')
             args.out_file.flush()
             print(log_str + '\n')
+
+            if args.earlystop:
+                print('Stopping Early!')
+                exit(0)
+
             netF.train()
             netB.train()
 
@@ -527,7 +530,7 @@ if __name__ == "__main__":
     parser.add_argument('--nl', type=bool, default=False)
 
     parser.add_argument('--threshold', type=int, default=0)
-    parser.add_argument('--cls_par', type=float, default=0.3)
+    parser.add_argument('--cls_par', type=float, default=0.2)
     parser.add_argument('--const_par', type=float, default=0.2)
     parser.add_argument('--ent_par', type=float, default=1.3)
 
@@ -544,6 +547,8 @@ if __name__ == "__main__":
     parser.add_argument('--da', type=str, default='uda', choices=['uda', 'pda'])
     parser.add_argument('--issave', type=bool, default=True)
     parser.add_argument('--wandb', type=int, default=0)
+    parser.add_argument('--earlystop', type=int, default=0)
+    
     args = parser.parse_args()
 
     if args.dset == 'office-home':
@@ -591,7 +596,7 @@ if __name__ == "__main__":
         mode = 'online' if args.wandb else 'disabled'
         
         import wandb
-        wandb.init(project='Tuned_STDA_DomainNet', entity='vclab', name=f'{names[args.s]} to {names[args.t]}', reinit=True,mode=mode)
+        wandb.init(project='EarlyStop_STDA_DomainNet', entity='vclab', name=f'{names[args.s]} to {names[args.t]}', reinit=True,mode=mode)
 
         args.output_dir_src = osp.join(args.output_src, args.da, args.dset, names[args.s][0].upper())
         args.output_dir = osp.join(args.output, 'STDA', args.dset, names[args.s][0].upper() + names[args.t][0].upper())

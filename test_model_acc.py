@@ -124,13 +124,13 @@ if __name__ == '__main__':
     netB = network.feat_bootleneck(type='bn', feature_dim=netF.in_features,bottleneck_dim=256).cuda()
     netC = network.feat_classifier(type='wn', class_num=345, bottleneck_dim=256).cuda()
 
-    modelpathF = 'san/uda/domain_net/C/source_F.pt'
+    modelpathF = 'optimised_STDA_wt/STDA/domain_net/RC/target_F_par_0.2.pt'
     netF.load_state_dict(torch.load(modelpathF))
 
-    modelpathB = 'san/uda/domain_net/C/source_B.pt'
+    modelpathB = 'optimised_STDA_wt/STDA/domain_net/RC/target_B_par_0.2.pt'
     netB.load_state_dict(torch.load(modelpathB))
 
-    modelpathC = 'san/uda/domain_net/C/source_C.pt'
+    modelpathC = 'optimised_STDA_wt/STDA/domain_net/RC/target_C_par_0.2.pt'
     netC.load_state_dict(torch.load(modelpathC))
     
     print('Models Loaded Successfully')
