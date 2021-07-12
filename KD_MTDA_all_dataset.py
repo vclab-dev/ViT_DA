@@ -225,8 +225,7 @@ def train_sequential_KD(student_model, teacher_model, dataloader, curr_cycle= 0,
         running_loss = 0.0
         iter_test = iter(dataloader)
 
-        # for i in range(len(dataloader)):
-        for i in range(10):
+        for i in range(len(dataloader)):
     
             with torch.no_grad():
                 data = iter_test.next()
