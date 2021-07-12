@@ -1,11 +1,6 @@
 import argparse
-from genericpath import exists
-from logging import disable
-import os, sys
+import os
 import os.path as osp
-from numpy.core.fromnumeric import shape
-from torch.nn.modules.activation import Softmax
-import torchvision
 import numpy as np
 import torch
 import torch.nn as nn
@@ -13,16 +8,11 @@ import torch.optim as optim
 from torchvision import transforms
 import network, loss
 from torch.utils.data import DataLoader
-from data import ImageList, ImageList_idx
-import random, pdb, math, copy
+from data_list import ImageList_idx
 from tqdm import tqdm
-from scipy.spatial.distance import cdist
-from sklearn.metrics import confusion_matrix
-from loss import KnowledgeDistillationLoss
 import wandb
 from tqdm import tqdm
 import random
-from image_target import obtain_label
 
 np.random.seed(0)
 random.seed(0)
@@ -45,7 +35,7 @@ def create_teachers_student(s2t, source, student_arch='rn50'):
         netB = network.feat_bootleneck(type='bn', feature_dim=netF.in_features,bottleneck_dim=256).cuda()
         netC = network.feat_classifier(type='wn', class_num=num_classes, bottleneck_dim=256).cuda()
 
-        modelpathF = f'{args.adapted_wt_dir}/{dom_adapts}/target_F_par_0.3.pt'
+        modelpathF = f'{args.adapted_wt_dir}/{dom_adapts}/target_F_par_0.2.pt'
         #print(modelpathF)
         # print(netF.state_dict().keys())
         # print('\n \n \n \n')
@@ -53,10 +43,10 @@ def create_teachers_student(s2t, source, student_arch='rn50'):
         netF.load_state_dict(torch.load(modelpathF))
         
 
-        modelpathB = f'{args.adapted_wt_dir}/{dom_adapts}/target_B_par_0.3.pt'
+        modelpathB = f'{args.adapted_wt_dir}/{dom_adapts}/target_B_par_0.2.pt'
         netB.load_state_dict(torch.load(modelpathB))
 
-        modelpathC = f'{args.adapted_wt_dir}/{dom_adapts}/target_C_par_0.3.pt'
+        modelpathC = f'{args.adapted_wt_dir}/{dom_adapts}/target_C_par_0.2.pt'
         netC.load_state_dict(torch.load(modelpathC))
         
         netF.eval()
@@ -81,8 +71,9 @@ def create_teachers_student(s2t, source, student_arch='rn50'):
     student = [netF,netB, netC]
     return teachers, student
 
-def test_model(model, dataloader, dataset_name=None):
+def test_model(args, model, dataloader, dataset_name=None):
     # print(len(dataloader))
+    print(f'Started testing on [{dataset_name}] -', len(dataloader)*args.batch_size, 'images')
     netF = model[0]
     netB = model[1]
     netC = model[2]
@@ -91,7 +82,6 @@ def test_model(model, dataloader, dataset_name=None):
     total = 0
     
     with torch.no_grad():
-        print('Started Testing')
         iter_test = iter(dataloader)
         for _ in tqdm(range(len(dataloader))):
             data = iter_test.next()
@@ -107,7 +97,12 @@ def test_model(model, dataloader, dataset_name=None):
             correct += (predicted == labels).sum().item()
             
     accuracy = 100 * correct / total
-    print('Accuracy of the network on the {} images: {}'.format(dataset_name, accuracy))
+    
+    log_str ='Accuracy of the network on the {} images: {}'.format(dataset_name, accuracy)
+
+    args.out_file.write(log_str + '\n')
+    args.out_file.flush()
+    print(log_str + '\n')
     return accuracy, correct, total
 
 def data_load(batch_size=64,txt_path='data/office', dset=None):
@@ -124,10 +119,19 @@ def data_load(batch_size=64,txt_path='data/office', dset=None):
             normalize
         ])
 
+    def image_test(resize_size=256, crop_size=224, alexnet=False):
+        normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
+                                        std=[0.229, 0.224, 0.225])
+        return transforms.Compose([
+            transforms.Resize((resize_size, resize_size)),
+            transforms.ToTensor(),
+            normalize
+        ])
+
     dsets = {}
     dset_loaders = {}
-    
-    dset = {}
+    dset_loaders_test = {}
+
     train_bs = batch_size
     
     if args.dset == 'office':
@@ -154,15 +158,28 @@ def data_load(batch_size=64,txt_path='data/office', dset=None):
                 'sketch':    f'{txt_path}/sketch.txt', 
                 'real':      f'{txt_path}/real.txt'}
 
-                
+        txt_files_test = {'clipart': f'{txt_path}/clipart_test.txt',
+                'infograph': f'{txt_path}/infograph_test.txt', 
+                'painting':  f'{txt_path}/painting_test.txt', 
+                'quickdraw': f'{txt_path}/quickdraw_test.txt', 
+                'sketch':    f'{txt_path}/sketch_test.txt', 
+                'real':      f'{txt_path}/real_test.txt'}
+
+        for domain, paths in txt_files_test.items(): 
+            txt_tar = open(paths).readlines()
+            dsets[domain] = ImageList_idx(txt_tar, transform=image_test())
+            dset_loaders_test[domain] = DataLoader(dsets[domain], batch_size=train_bs,drop_last=False)
+
+    if args.dset != 'domain_net':
+        dset_loaders_test = dset_loaders
+    
     for domain, paths in txt_files.items(): 
         txt_tar = open(paths).readlines()
 
         dsets[domain] = ImageList_idx(txt_tar, transform=image())
         dset_loaders[domain] = DataLoader(dsets[domain], batch_size=train_bs, shuffle=True,drop_last=True)
 
-
-    return dset_loaders
+    return dset_loaders, dset_loaders_test
 
 def dist_loss(t, s, T=0.1):
     soft = nn.Softmax(dim=1)
@@ -208,7 +225,8 @@ def train_sequential_KD(student_model, teacher_model, dataloader, curr_cycle= 0,
         running_loss = 0.0
         iter_test = iter(dataloader)
 
-        for i in range(len(dataloader)):
+        # for i in range(len(dataloader)):
+        for i in range(10):
     
             with torch.no_grad():
                 data = iter_test.next()
@@ -245,7 +263,7 @@ def train_sequential_KD(student_model, teacher_model, dataloader, curr_cycle= 0,
 
     return [netF_student, netB_student, netC_student]
 
-def multi_domain_avg_acc(student, test_on=None):
+def multi_domain_avg_acc(args, student, dset_loaders_test,test_on=None):
 
     '''
         Given a student model and a set of domain, this func returns the avg accuracy
@@ -258,35 +276,42 @@ def multi_domain_avg_acc(student, test_on=None):
     '''
 
     if test_on is not None:
-        correct,total = [], []
+        accuracies = []
 
         for sample in test_on:
-            print(f'Testing Acc on {sample}')
-            _,corr,tot = test_model(student, dom_dataloaders[sample], dataset_name=sample)
-            correct.append(corr)
-            total.append(tot)
+            test_acc,corr,tot = test_model(args, student, dset_loaders_test[sample], dataset_name=sample)
+            accuracies.append(test_acc)
 
-        avg_acc = 100*sum(correct)/sum(total)
+        avg_acc = sum(accuracies)/len(accuracies)
         
         combined_name = '_'.join(test_on)
-        print(f'\n\n Average Accuracy on {combined_name}: {avg_acc} \n\n')
+        log_str = f'Average Accuracy on {combined_name}: {avg_acc}'
+        args.out_file.write(log_str + '\n')
+        args.out_file.flush()
+        print(log_str + '\n')
+
         return avg_acc
     
     else:
         raise ValueError
 
-        
+def print_args(args):
+    s = "==========================================\n"
+    for arg, content in args.__dict__.items():
+        s += "{}:{}\n".format(arg, content)
+    print(s)
+    return s
 
 if __name__ == '__main__':
 
     parser = argparse.ArgumentParser(description='Args parser for KD_MTDA')
 
     # training parameters
-    parser.add_argument('-b', '--batch_size', default=32, type=int,help='mini-batch size (default: 32)')
-    #parser.add_argument('--gpu_id', type=str, nargs='?', default='1', help="device id to run")
+    parser.add_argument('-b', '--batch_size', default=54, type=int,help='mini-batch size (default: 54)')
+    parser.add_argument('--gpu_id', type=str, nargs='?', default='0', help="device id to run")
     parser.add_argument('-s', '--source', type=str,help='Select the source [amazon, dslr, webcam]')
-    parser.add_argument('-e', '--epochs', default=100, type=int,help='select number of cycles')
-    parser.add_argument('-w', '--use_wandb', default=0, type=int,help='Log to wandb or not [0 - dont use | 1 - use]')
+    parser.add_argument('-e', '--epochs', default=40, type=int,help='select number of cycles')
+    parser.add_argument('-w', '--wandb', default=0, type=int,help='Log to wandb or not [0 - dont use | 1 - use]')
     parser.add_argument('-a', '--arch', default='rn50', type=str,help='Select student vit or rn50 based (default: rn50)')
 
     parser.add_argument('-l', '--adapted_wt_dir', default='san/uda/office', type=str,help='Load 1S1T  adapted wts')
@@ -306,12 +331,17 @@ if __name__ == '__main__':
     max_cycles = args.epochs
     batch_size = args.batch_size
     save_weight_dir = args.save
+    os.environ["CUDA_VISIBLE_DEVICES"] = args.gpu_id
 
-    mode = 'online' if args.use_wandb else 'disabled'
-    wandb.init(project='KD_MTDA_BMVC', entity='vclab',name=f"{source} to others {args.arch}", mode=mode)
+    mode = 'online' if args.wandb else 'disabled'
+    wandb.init(project='Tuned_KD_MTDA', entity='vclab',name=f"{source} to others {args.arch}", mode=mode)
     
-    save_path = f'{save_weight_dir}/{args.dset}/{source}_to_others'
+    save_path = f'{save_weight_dir}/KT_MTDA/{args.dset}/{source}_to_others'
     os.makedirs(save_path,exist_ok=True)
+    
+    args.out_file = open(osp.join(save_path, 'log.txt'), 'w')
+    args.out_file.write(print_args(args) + '\n')
+    args.out_file.flush()
 
     if args.dset == 'office':
         s2t = {'amazon' : ['AD', 'AW'], 'webcam': ['WA', 'WD'], 
@@ -340,7 +370,7 @@ if __name__ == '__main__':
         num_classes = 345
 
     teachers, student = create_teachers_student(s2t, source, student_arch=args.arch)
-    dom_dataloaders = data_load(batch_size=batch_size, dset = args.dset, txt_path=args.txt) 
+    dom_dataloaders, dset_loaders_test = data_load(batch_size=batch_size, dset = args.dset, txt_path=args.txt) 
 
     if args.dset == 'office':                     
         sequential_select = { 'amazon': [['AD', 'dslr'], ['AW', 'webcam']],
@@ -373,15 +403,20 @@ if __name__ == '__main__':
     test_domains.remove(source)
 
     for i in range(max_cycles):
-        print(f'\n\n#### CYCLE {i+1} #####\n\n')
+        
+        log_str = f'\n\n#### CYCLE {i+1} #####\n\n'
+        args.out_file.write(log_str + '\n')
+        args.out_file.flush()
+        print(log_str)
+
         for adap_module, domain_sel in sequential_select[source]:
             print(f'Started Distillation from Teacher {adap_module} -> to student using {domain_sel} images\n')
             student = train_sequential_KD(student, teachers[adap_module], dom_dataloaders[domain_sel], 
                           curr_cycle=i, max_cycles=max_cycles, num_epoch=1, log_interval=5)
 
-        if i % 10 ==0:
+        if i % 2 ==0:
 
-            avg_acc = multi_domain_avg_acc(student,test_on=test_domains)
+            avg_acc = multi_domain_avg_acc(args, student, dset_loaders_test, test_on=test_domains)
             
             wandb.log({"avg_acc":avg_acc, 'cycle': i})
 

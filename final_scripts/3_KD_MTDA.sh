@@ -1,14 +1,26 @@
 # DomainNet
-## 
-CUDA_VISIBLE_DEVICES=0 python KD_MTDA_all_dataset.py -s sketch --dset domain_net -t ./data/domain_net --save delete -l ./BMVC_STDA_DomainNet/uda/domain_net
+
+python KD_MTDA_all_dataset.py --gpu_id 1 -s sketch --dset domain_net -t ./data/domain_net --save optimised_STDA_wt -l optimised_STDA_wt/STDA/domain_net --wandb 1 
+
+python KD_MTDA_all_dataset.py --gpu_id 0 -s infograph --dset domain_net -t ./data/domain_net --save optimised_STDA_wt -l optimised_STDA_wt/STDA/domain_net --wandb 1 --batch_size 128
+
+python KD_MTDA_all_dataset.py --gpu_id 0 -s quickdraw --dset domain_net -t ./data/domain_net --save optimised_STDA_wt -l optimised_STDA_wt/STDA/domain_net --wandb 1 --batch_size 128
+
+python KD_MTDA_all_dataset.py --gpu_id 0 -s clipart --dset domain_net -t ./data/domain_net --save optimised_STDA_wt -l optimised_STDA_wt/STDA/domain_net --wandb 1 
+
+python KD_MTDA_all_dataset.py --gpu_id 1 -s painting --dset domain_net -t ./data/domain_net --save optimised_STDA_wt -l optimised_STDA_wt/STDA/domain_net --wandb 1 
+
+python KD_MTDA_all_dataset.py --gpu_id 2 -s real --dset domain_net -t ./data/domain_net --save optimised_STDA_wt -l optimised_STDA_wt/STDA/domain_net --wandb 1 
+
+
 
 # Office-Home
 
-CUDA_VISIBLE_DEVICES=0 python KD_MTDA_all_dataset.py -s Clipart --dset office-home -t ./data/domain_net --save delete -l ./BMVC_STDA_DomainNet/uda/domain_net
+python KD_MTDA_all_dataset.py -s Clipart --dset office-home -t ./data/domain_net --save delete -l ./BMVC_STDA_DomainNet/uda/domain_net --wandb 0
 
 # Office-31
 
-CUDA_VISIBLE_DEVICES=0 python KD_MTDA_all_dataset.py -s amazon --dset office -t ./data/domain_net --save delete -l ./BMVC_STDA_DomainNet/uda/domain_net
+python KD_MTDA_all_dataset.py -s amazon --dset office -t ./data/domain_net --save delete -l ./BMVC_STDA_DomainNet/uda/domain_net
 
 # PACS
-CUDA_VISIBLE_DEVICES=0 python KD_MTDA_all_dataset.py -s art_painting --dset pacs -t ./data/domain_net --save delete -l ./BMVC_STDA_DomainNet/uda/domain_net
+python KD_MTDA_all_dataset.py -s art_painting --dset pacs -t ./data/domain_net --save delete -l ./BMVC_STDA_DomainNet/uda/domain_net
