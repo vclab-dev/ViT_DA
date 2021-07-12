@@ -1,7 +1,7 @@
 
 ################ STDA for sketch (DomiainNet) ['clipart', 'infograph', 'painting', 'quickdraw', 'sketch', 'real']
 
-python STDA.py --batch_size 16 --dset domain_net --gpu_id 0 --output optimised_STDA_wt --max_epoch 1 --output_src san --s 5 --wandb 0 --worker 4 
+python STDA.py --batch_size 16 --dset domain_net --gpu_id 0 --output optimised_STDA_wt --max_epoch 1 --output_src san --s 5 --wandb 0 --worker 4 --earlystop 1
 
 ################ STDA for webcam (Office31)  ['amazon', 'dslr', 'webcam']
 
