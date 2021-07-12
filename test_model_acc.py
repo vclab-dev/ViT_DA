@@ -28,7 +28,6 @@ def test_model(model_list, dataloader, args, dataset_name=None):
             labels = data[1].to('cuda')
 
             outputs = netC(netB(netF(inputs)))
-            # print(outputs)
             
             _, predicted = torch.max(outputs.data, 1)
 
@@ -106,12 +105,19 @@ def multi_domain_avg_acc(student, test_on=None):
 
 if __name__ == '__main__':
 
-    parser = argparse.ArgumentParser(description='Args parser for KD_MTDA')
+    modelpathF = 'optimised_STDA_wt/STDA/domain_net/RC/target_F_par_0.2.pt'
+    modelpathB = 'optimised_STDA_wt/STDA/domain_net/RC/target_B_par_0.2.pt'
+    modelpathC = 'optimised_STDA_wt/STDA/domain_net/RC/target_C_par_0.2.pt'
+    test_dataset = 'clipart'
+    # test_dataset = ['infograph', 'clipart', 'quickdraw', 'painting', 'real']
+    
 
     # training parameters
-    parser.add_argument('-b', '--batch_size', default=512, type=int,help='mini-batch size (default: 32)')
-    parser.add_argument('-e', '--epochs', default=100, type=int,help='select number of cycles')
+    parser = argparse.ArgumentParser(description='Args parser for KD_MTDA')
+    parser.add_argument('-b', '--batch_size', default=256, type=int,help='mini-batch size (default: 32)')
     parser.add_argument('-a', '--arch', default='vit', type=str,help='Select model type vit or rn50 based')
+    parser.add_argument('-t', '--txt_path', default='data/domain_net', type=str,help='Path to all txt files')
+    parser.add_argument('-n', '--bottleneck_dim', default=256, type=str,help='Select Bottleneck dim')
     
     args = parser.parse_args()
     
@@ -121,16 +127,11 @@ if __name__ == '__main__':
     if args.arch == 'vit':
         netF = network.ViT().cuda()
 
-    netB = network.feat_bootleneck(type='bn', feature_dim=netF.in_features,bottleneck_dim=256).cuda()
-    netC = network.feat_classifier(type='wn', class_num=345, bottleneck_dim=256).cuda()
+    netB = network.feat_bootleneck(type='bn', feature_dim=netF.in_features,bottleneck_dim=args.bottleneck_dim).cuda()
+    netC = network.feat_classifier(type='wn', class_num=345, bottleneck_dim=args.bottleneck_dim).cuda()
 
-    modelpathF = 'optimised_STDA_wt/STDA/domain_net/RC/target_F_par_0.2.pt'
     netF.load_state_dict(torch.load(modelpathF))
-
-    modelpathB = 'optimised_STDA_wt/STDA/domain_net/RC/target_B_par_0.2.pt'
     netB.load_state_dict(torch.load(modelpathB))
-
-    modelpathC = 'optimised_STDA_wt/STDA/domain_net/RC/target_C_par_0.2.pt'
     netC.load_state_dict(torch.load(modelpathC))
     
     print('Models Loaded Successfully')
@@ -140,10 +141,18 @@ if __name__ == '__main__':
 
     model_list = [netF,netB, netC]
 
-    dom_dataloaders = data_load(batch_size=args.batch_size,txt_path='data/domain_net') 
-    
-    ## For testing on multiple Domains (Uncomment Below)
-    # avg_acc = multi_domain_avg_acc(model_list, test_on=['infograph', 'clipart', 'quickdraw', 'painting', 'real'])
+    dom_dataloaders = data_load(batch_size=args.batch_size,txt_path=args.txt_path) 
 
-    ## For testing on single Domain (Uncomment Below)
-    accuracy, correct, total = test_model(model_list, dom_dataloaders['clipart'],args, dataset_name='clipart')
+    if type(test_dataset) == list:
+        print(f'Started testing on {test_dataset}')
+        avg_acc = multi_domain_avg_acc(model_list, test_on=test_dataset)
+    
+    if type(test_dataset) == str:
+        print(f'Started testing on {test_dataset}')
+        accuracy, correct, total = test_model(model_list, dom_dataloaders[test_dataset],args, dataset_name=test_dataset)
+    
+    ## For testing on multiple Domains
+    # avg_acc = multi_domain_avg_acc(model_list, test_on=['infograph', 'clipart', 'quickdraw', 'painting', 'real'])
+    
+    ## For testing on single Domain
+    # accuracy, correct, total = test_model(model_list, dom_dataloaders[test_dataset],args, dataset_name=test_dataset)
