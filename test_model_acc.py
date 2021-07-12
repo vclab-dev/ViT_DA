@@ -93,7 +93,7 @@ def multi_domain_avg_acc(student, test_on=None):
             correct.append(corr)
             total.append(tot)
 
-        avg_acc = 100 * sum(accuracies)/len(accuracies)
+        avg_acc = sum(accuracies)/len(accuracies)
         combined_name = '_'.join(test_on)
 
         print(f'\n\n Average Accuracy on {combined_name}: {avg_acc} \n\n')
