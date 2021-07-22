@@ -88,7 +88,7 @@ def multi_domain_avg_acc(student, test_on=None):
 
         for sample in test_on:
             print(f'Testing Acc on {sample}')
-            test_acc,corr,tot = test_model(student, dom_dataloaders[sample], dataset_name=sample)
+            test_acc,corr,tot = test_model(student, dom_dataloaders[sample], args, dataset_name=sample)
             accuracies.append(test_acc)
             correct.append(corr)
             total.append(tot)
@@ -105,26 +105,30 @@ def multi_domain_avg_acc(student, test_on=None):
 
 if __name__ == '__main__':
 
-    modelpathF = 'optimised_STDA_wt/STDA/domain_net/RC/target_F_par_0.2.pt'
-    modelpathB = 'optimised_STDA_wt/STDA/domain_net/RC/target_B_par_0.2.pt'
-    modelpathC = 'optimised_STDA_wt/STDA/domain_net/RC/target_C_par_0.2.pt'
-    test_dataset = 'clipart'
-    # test_dataset = ['infograph', 'clipart', 'quickdraw', 'painting', 'real']
+    modelpathF = 'optimised_rn101_MTDA_wt/KT_MTDA/domain_net/painting_to_others/target_F_painting_rn101.pt'
+    modelpathB = 'optimised_rn101_MTDA_wt/KT_MTDA/domain_net/painting_to_others/target_B_painting_rn101.pt'
+    modelpathC = 'optimised_rn101_MTDA_wt/KT_MTDA/domain_net/painting_to_others/target_C_painting_rn101.pt'
+    # test_dataset = 'clipart'
+    test_dataset = ['infograph', 'clipart', 'quickdraw', 'real', 'sketch']
     
 
     # training parameters
     parser = argparse.ArgumentParser(description='Args parser for KD_MTDA')
     parser.add_argument('-b', '--batch_size', default=256, type=int,help='mini-batch size (default: 32)')
-    parser.add_argument('-a', '--arch', default='vit', type=str,help='Select model type vit or rn50 based')
+    parser.add_argument('-a', '--arch', default='rn50', type=str,help='Select model type vit or rn50 based')
     parser.add_argument('-t', '--txt_path', default='data/domain_net', type=str,help='Path to all txt files')
-    parser.add_argument('-n', '--bottleneck_dim', default=256, type=str,help='Select Bottleneck dim')
+    parser.add_argument('-n', '--bottleneck_dim', default=1024, type=str,help='Select Bottleneck dim')
     
     args = parser.parse_args()
     
     if args.arch == 'rn50':
         netF = network.ResBase(res_name='resnet50').cuda()
-
+    
+    if args.arch == 'rn101':
+        netF = network.ResBase(res_name='resnet101').cuda()
+        
     if args.arch == 'vit':
+
         netF = network.ViT().cuda()
 
     netB = network.feat_bootleneck(type='bn', feature_dim=netF.in_features,bottleneck_dim=args.bottleneck_dim).cuda()
