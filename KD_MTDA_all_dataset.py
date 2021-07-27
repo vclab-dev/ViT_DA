@@ -58,6 +58,10 @@ def create_teachers_student(s2t, source, student_arch='rn50'):
     print('Teachers made Successfully !')
     if student_arch == 'rn50':
         netF = network.ResBase(res_name='resnet50').cuda()
+
+    if student_arch == 'rn101':
+        netF = network.ResBase(res_name='resnet101').cuda()
+
     if student_arch == 'vit':
         netF = network.ViT().cuda()
     netB = network.feat_bootleneck(type='bn', feature_dim=netF.in_features,bottleneck_dim=1024).cuda()
@@ -413,7 +417,7 @@ if __name__ == '__main__':
             student = train_sequential_KD(student, teachers[adap_module], dom_dataloaders[domain_sel], 
                           curr_cycle=i, max_cycles=max_cycles, num_epoch=1, log_interval=5)
 
-        if i % 2 ==0:
+        if i % 9 ==0:
 
             avg_acc = multi_domain_avg_acc(args, student, dset_loaders_test, test_on=test_domains)
             

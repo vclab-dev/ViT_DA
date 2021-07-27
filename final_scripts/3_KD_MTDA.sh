@@ -1,16 +1,16 @@
 # DomainNet
 
-python KD_MTDA_all_dataset.py --gpu_id 1 -s sketch --dset domain_net -t ./data/domain_net --save optimised_STDA_wt -l optimised_STDA_wt/STDA/domain_net --wandb 1 
+python KD_MTDA_all_dataset.py --gpu_id 0 -s sketch --dset domain_net -t ./data/domain_net --save optimised_rn101_MTDA_wt --arch rn101 -l optimised_STDA_wt/STDA/domain_net --wandb 1 
 
-python KD_MTDA_all_dataset.py --gpu_id 0 -s infograph --dset domain_net -t ./data/domain_net --save optimised_STDA_wt -l optimised_STDA_wt/STDA/domain_net --wandb 1 --batch_size 128
+python KD_MTDA_all_dataset.py --gpu_id 0 -s infograph --dset domain_net -t ./data/domain_net --save optimised_rn101_MTDA_wt --arch rn101 -l optimised_STDA_wt/STDA/domain_net --wandb 1 --batch_size 128
 
-python KD_MTDA_all_dataset.py --gpu_id 0 -s quickdraw --dset domain_net -t ./data/domain_net --save optimised_STDA_wt -l optimised_STDA_wt/STDA/domain_net --wandb 1 --batch_size 128
+python KD_MTDA_all_dataset.py --gpu_id 0 -s quickdraw --dset domain_net -t ./data/domain_net --save optimised_rn101_MTDA_wt --arch rn101 -l optimised_STDA_wt/STDA/domain_net --wandb 1 --batch_size 128
 
-python KD_MTDA_all_dataset.py --gpu_id 0 -s clipart --dset domain_net -t ./data/domain_net --save optimised_STDA_wt -l optimised_STDA_wt/STDA/domain_net --wandb 1 
+python KD_MTDA_all_dataset.py --gpu_id 0 -s clipart --dset domain_net -t ./data/domain_net --save optimised_rn101_MTDA_wt --arch rn101 -l optimised_STDA_wt/STDA/domain_net --wandb 1 
 
-python KD_MTDA_all_dataset.py --gpu_id 1 -s painting --dset domain_net -t ./data/domain_net --save optimised_STDA_wt -l optimised_STDA_wt/STDA/domain_net --wandb 1 
+python KD_MTDA_all_dataset.py --gpu_id 0 -s painting --dset domain_net -t ./data/domain_net --save optimised_rn101_MTDA_wt --arch rn101 -l optimised_STDA_wt/STDA/domain_net --wandb 1 
 
-python KD_MTDA_all_dataset.py --gpu_id 2 -s real --dset domain_net -t ./data/domain_net --save optimised_STDA_wt -l optimised_STDA_wt/STDA/domain_net --wandb 1 
+python KD_MTDA_all_dataset.py --gpu_id 0 -s real --dset domain_net -t ./data/domain_net --save optimised_rn101_MTDA_wt --arch rn101 -l optimised_STDA_wt/STDA/domain_net --wandb 1 
 
 
 
