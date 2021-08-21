@@ -258,13 +258,13 @@ def train_source(args):
             netF.eval()
             netB.eval()
             netC.eval()
-            if args.dset=='VISDA-C':
+            if args.dset=='visda-2017':
                 acc_s_te, acc_list = cal_acc(dset_loaders['source_te'], netF, netB, netC, True)
                 log_str = 'Task: {}, Iter:{}/{}; Accuracy = {:.2f}%'.format(args.name_src, iter_num, max_iter, acc_s_te) + '\n' + acc_list
             else:
                 acc_s_te, _ = cal_acc(dset_loaders['source_te'], netF, netB, netC, False)
-                wandb.log({'SRC TRAIN: Acc' : acc_s_te})
                 log_str = 'Task: {}, Iter:{}/{}; Accuracy = {:.2f}%'.format(args.name_src, iter_num, max_iter, acc_s_te)
+            wandb.log({'SRC TRAIN: Acc' : acc_s_te})
             args.out_file.write(log_str + '\n')
             args.out_file.flush()
             print(log_str+'\n')
@@ -319,7 +319,7 @@ def test_target(args):
         acc_os1, acc_os2, acc_unknown = cal_acc_oda(dset_loaders['test'], netF, netB, netC)
         log_str = '\nTraining: {}, Task: {}, Accuracy = {:.2f}% / {:.2f}% / {:.2f}%'.format(args.trte, args.name, acc_os2, acc_os1, acc_unknown)
     else:
-        if args.dset=='VISDA-C':
+        if args.dset=='visda-2017':
             acc, acc_list = cal_acc(dset_loaders['test'], netF, netB, netC, True)
             log_str = '\nTraining: {}, Task: {}, Accuracy = {:.2f}%'.format(args.trte, args.name, acc) + '\n' + acc_list
         else:
@@ -344,7 +344,7 @@ if __name__ == "__main__":
     parser.add_argument('--max_epoch', type=int, default=20, help="max iterations")
     parser.add_argument('--batch_size', type=int, default=64, help="batch_size")
     parser.add_argument('--worker', type=int, default=4, help="number of workers")
-    parser.add_argument('--dset', type=str, default='office', choices=['VISDA-C', 'office', 'office-home', 'office-caltech', 'pacs', 'domain_net'])
+    parser.add_argument('--dset', type=str, default='office', choices=['visda-2017', 'office', 'office-home', 'office-caltech', 'pacs', 'domain_net'])
     parser.add_argument('--lr', type=float, default=1e-2, help="learning rate")
     parser.add_argument('--net', type=str, default='vit', help="vgg16, resnet50, resnet101")
     parser.add_argument('--seed', type=int, default=2020, help="random seed")
@@ -368,7 +368,7 @@ if __name__ == "__main__":
     if args.dset == 'office':
         names = ['amazon', 'dslr', 'webcam']
         args.class_num = 31
-    if args.dset == 'VISDA-C':
+    if args.dset == 'visda-2017':
         names = ['train', 'validation']
         args.class_num = 12
     if args.dset == 'office-caltech':
@@ -427,7 +427,6 @@ if __name__ == "__main__":
         folder = './data/'
         args.s_dset_path = folder + args.dset + '/' + names[args.s] + '_list.txt'
         args.test_dset_path = folder + args.dset + '/' + names[args.t] + '_list.txt'
-        #wandb.init(project='BMVC_vit_pacs', entity='vclab', name=f'SRC Train: {names[args.s]}', reinit=True)
 
         if args.dset == 'office-home':
             if args.da == 'pda':
