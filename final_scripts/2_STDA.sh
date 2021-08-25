@@ -14,3 +14,7 @@ python STDA.py --batch_size 16 --dset domain_net --gpu_id 0 --output optimised_S
 ################ STDA for art_painting (PACS) ['art_painting', 'cartoon', 'photo', 'sketch']
 
 # python STDA.py --cls_par 0.3 --batch_size 64 --dset pacs --gpu_id 0 --output delete --output_src san --s 0 --wandb 0 --worker 0
+
+################ STDA for train_validation (visda-2017) ['train', 'validation']
+
+python STDA.py --batch_size 64 --dset visda-2017 --gpu_id 0 --output optimised_STDA_wt --output_src san --s 0 --wandb 0 --worker 4 

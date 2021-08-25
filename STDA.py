@@ -255,7 +255,9 @@ def train_target(args):
             # netF_t.eval()
             # netB_t.eval()
             ################################ Done ###################################
+            print('Starting to find Pseudo Labels! May take a while :)')
             mem_label, dd,mean_all_output = obtain_label(dset_loaders['test'], netF, netB, netC, args) # test loader same as targe but has 3*batch_size compared to target and train
+            print('Completed finding Pseudo Labels')
             mem_label = torch.from_numpy(mem_label).cuda()
             dd = torch.from_numpy(dd).cuda()
             mean_all_output = torch.from_numpy(mean_all_output).cuda()
@@ -292,7 +294,7 @@ def train_target(args):
             # if args.kd:
             #     kd_loss = KnowledgeDistillationLoss()(outputs_test, outputs_teacher/0.1) # vikash
             #     classifier_loss += kd_loss
-            # if iter_num < interval_iter and args.dset == "VISDA-C":
+            # if iter_num < interval_iter and args.dset == "visda-2017":
             #     classifier_loss *= 0
         else:
             classifier_loss = torch.tensor(0.0).cuda()
@@ -511,14 +513,14 @@ def distributed_sinkhorn(out,eps=0.1, niters=3,world_size=1):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Rand-Augment')
     parser.add_argument('--gpu_id', type=str, nargs='?', default='0', help="device id to run")
-    parser.add_argument('--s', type=int, default=2, help="source")
+    parser.add_argument('--s', type=int, default=0, help="source")
     # parser.add_argument('--t', type=int, default=1, help="target")
     parser.add_argument('--max_epoch', type=int, default=3, help="max iterations")
     parser.add_argument('--interval', type=int, default=15)
     parser.add_argument('--batch_size', type=int, default=64, help="batch_size")
     parser.add_argument('--worker', type=int, default=4, help="number of workers")
     parser.add_argument('--dset', type=str, default='office-home',
-                        choices=['VISDA-C', 'office', 'office-home', 'office-caltech', 'pacs', 'domain_net'])
+                        choices=['visda-2017', 'office', 'office-home', 'office-caltech', 'pacs', 'domain_net'])
     parser.add_argument('--lr', type=float, default=1e-3, help="learning rate")
     parser.add_argument('--net', type=str, default='vit', help="alexnet, vgg16, resnet50, res101")
     parser.add_argument('--seed', type=int, default=2020, help="random seed")
@@ -557,7 +559,7 @@ if __name__ == "__main__":
     if args.dset == 'office':
         names = ['amazon', 'dslr', 'webcam']
         args.class_num = 31
-    if args.dset == 'VISDA-C':
+    if args.dset == 'visda-2017':
         names = ['train', 'validation']
         args.class_num = 12
     if args.dset == 'office-caltech':
