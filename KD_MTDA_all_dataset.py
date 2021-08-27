@@ -18,7 +18,7 @@ np.random.seed(0)
 random.seed(0)
 torch.manual_seed(0)
 
-def create_teachers_student(s2t, source, student_arch='rn50'): 
+def create_teachers_student(s2t, source, student_arch='rn50', teacher_arch='rn50'): 
 
     '''
         Create ensemble of teachers and one student model 
@@ -30,12 +30,16 @@ def create_teachers_student(s2t, source, student_arch='rn50'):
     for dom_adapts in s2t[source]:
 
         print('Loading weights for ', dom_adapts)
-
-        netF = network.ViT().cuda()
+        if teacher_arch in ['rn50', 'resnet50']:
+            netF = network.ResBase(res_name='resnet50').cuda()
+        elif teacher_arch[0:3] == 'res':
+            netF = network.ResBase(res_name=teacher_arch).cuda()
+        elif teacher_arch == 'vit':
+            netF = network.ViT().cuda()
         netB = network.feat_bootleneck(type='bn', feature_dim=netF.in_features,bottleneck_dim=256).cuda()
         netC = network.feat_classifier(type='wn', class_num=num_classes, bottleneck_dim=256).cuda()
 
-        modelpathF = f'{args.adapted_wt_dir}/{dom_adapts}/target_F_par_0.2.pt'
+        modelpathF = f'{args.adapted_wt_dir}/{dom_adapts}/target_F_par_0.3.pt'
         #print(modelpathF)
         # print(netF.state_dict().keys())
         # print('\n \n \n \n')
@@ -43,10 +47,10 @@ def create_teachers_student(s2t, source, student_arch='rn50'):
         netF.load_state_dict(torch.load(modelpathF))
         
 
-        modelpathB = f'{args.adapted_wt_dir}/{dom_adapts}/target_B_par_0.2.pt'
+        modelpathB = f'{args.adapted_wt_dir}/{dom_adapts}/target_B_par_0.3.pt'
         netB.load_state_dict(torch.load(modelpathB))
 
-        modelpathC = f'{args.adapted_wt_dir}/{dom_adapts}/target_C_par_0.2.pt'
+        modelpathC = f'{args.adapted_wt_dir}/{dom_adapts}/target_C_par_0.3.pt'
         netC.load_state_dict(torch.load(modelpathC))
         
         netF.eval()
@@ -316,6 +320,7 @@ if __name__ == '__main__':
     parser.add_argument('-e', '--epochs', default=40, type=int,help='select number of cycles')
     parser.add_argument('-w', '--wandb', default=0, type=int,help='Log to wandb or not [0 - dont use | 1 - use]')
     parser.add_argument('-a', '--arch', default='rn50', type=str,help='Select student vit or rn50 based (default: rn50)')
+    parser.add_argument('--arch_teacher', default='vit', type=str,help='Select student vit or rn50 based (default: vit)')
 
     parser.add_argument('-l', '--adapted_wt_dir', default='san/uda/office', type=str,help='Load 1S1T  adapted wts')
     parser.add_argument('-t','--txt', default='data/office', type=str,help='Load the dataset txt file')
@@ -372,7 +377,7 @@ if __name__ == '__main__':
 
         num_classes = 345
 
-    teachers, student = create_teachers_student(s2t, source, student_arch=args.arch)
+    teachers, student = create_teachers_student(s2t, source, student_arch=args.arch,teacher_arch=args.arch_teacher)
     dom_dataloaders, dset_loaders_test = data_load(batch_size=batch_size, dset = args.dset, txt_path=args.txt) 
 
     if args.dset == 'office':                     
