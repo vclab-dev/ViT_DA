@@ -194,6 +194,10 @@ def train_source(args):
         netF = network.VGGBase(vgg_name=args.net).cuda()
     elif args.net == 'vit':
         netF = network.ViT().cuda()
+    elif args.net == 'deit_s':
+        netF = torch.hub.load('facebookresearch/deit:main', 'deit_small_patch16_224', pretrained=True).cuda()
+        netF.in_features = 1000
+
     
     ### test model paremet size
     # model=network.ResBase(res_name=args.net)
@@ -299,6 +303,9 @@ def test_target(args):
         netF = network.ResBase(res_name=args.net).cuda()
     elif args.net[0:3] == 'vgg':
         netF = network.VGGBase(vgg_name=args.net).cuda()  
+    elif args.net == 'deit_s':
+        netF = torch.hub.load('facebookresearch/deit:main', 'deit_small_patch16_224', pretrained=True).cuda()
+        netF.in_features = 1000
     else:
         netF = network.ViT().cuda()
         
@@ -425,8 +432,8 @@ if __name__ == "__main__":
         args.name = names[args.s][0].upper() + names[args.t][0].upper()
 
         folder = './data/'
-        args.s_dset_path = folder + args.dset + '/' + names[args.s] + '_list.txt'
-        args.test_dset_path = folder + args.dset + '/' + names[args.t] + '_list.txt'
+        args.s_dset_path = folder + args.dset + '/' + names[args.s] + '.txt'
+        args.test_dset_path = folder + args.dset + '/' + names[args.t] + '.txt'
 
         if args.dset == 'office-home':
             if args.da == 'pda':

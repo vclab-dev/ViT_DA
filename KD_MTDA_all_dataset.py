@@ -36,6 +36,10 @@ def create_teachers_student(s2t, source, student_arch='rn50', teacher_arch='rn50
             netF = network.ResBase(res_name=teacher_arch).cuda()
         elif teacher_arch == 'vit':
             netF = network.ViT().cuda()
+        elif teacher_arch == 'deit_s':
+            netF = torch.hub.load('facebookresearch/deit:main', 'deit_small_patch16_224', pretrained=True).cuda()
+            netF.in_features = 1000
+        
         netB = network.feat_bootleneck(type='bn', feature_dim=netF.in_features,bottleneck_dim=256).cuda()
         netC = network.feat_classifier(type='wn', class_num=num_classes, bottleneck_dim=256).cuda()
 
@@ -65,6 +69,9 @@ def create_teachers_student(s2t, source, student_arch='rn50', teacher_arch='rn50
 
     if student_arch == 'rn101':
         netF = network.ResBase(res_name='resnet101').cuda()
+    if student_arch == 'deit_s':
+        netF = torch.hub.load('facebookresearch/deit:main', 'deit_small_patch16_224', pretrained=True).cuda()
+        netF.in_features = 1000
 
     if student_arch == 'vit':
         netF = network.ViT().cuda()
