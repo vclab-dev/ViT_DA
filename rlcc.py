@@ -1,37 +1,33 @@
 import numpy as np
+import sys
 from collections import Counter
+np.set_printoptions(threshold=sys.maxsize)
 
-def rlcc(prev_pseudo_labels, pseudo_labels):
-    m_t_prev = len(set(prev_pseudo_labels))
-    m_t_curr = len(set(pseudo_labels))
-    prev_pseudo_labels = np.array(prev_pseudo_labels)
-    pseudo_labels = np.array(pseudo_labels)
-    consensus=[]
-    for i in set(prev_pseudo_labels):
-        # print("-----i=", i)
+def rlcc(prev_pseudo_labels, pseudo_labels, soft_output, class_num,  alpha=0.9):
+
+    consensus=np.zeros((class_num, class_num))
+    for i in set(list(prev_pseudo_labels)):
         index_i = np.where(prev_pseudo_labels == i)
-        consensus_j=[]
-        for j in set(pseudo_labels):
-            # print("-------j=", j)
+        for j in set(list(pseudo_labels)):
             index_j = np.where(pseudo_labels == j)
             intersect = np.intersect1d(index_i, index_j)
-            # print("intersect:", intersect)
             union = np.union1d([i], pseudo_labels)
-            # print("union:", union)
-            consensus_j.append(len(intersect)/len(union))
-        consensus.append(consensus_j)            
-    consensus = np.array(consensus)
-    sum = consensus.sum(axis=1)
-    for i in range(m_t_prev):
-        consensus[i][:] = consensus[i][:]/sum[i]
-    print(prev_pseudo_labels.shape)
+            consensus[i][j] = len(intersect)/len(union)
+            
+    sum = consensus.sum(axis=1) + 1e-8
+    for i in range(class_num):
+        consensus[i][:] = consensus[i][:]/(sum[i])
+    print('consensus: ', consensus.shape)
+    # print(consensus)
+    prev_pseudo_labels = np.expand_dims(prev_pseudo_labels, axis=1)
+    # print('prev pl',prev_pseudo_labels[:10])
+    pseudo_labels = np.expand_dims(pseudo_labels, axis=1)
+    # print('curr pl', pseudo_labels[:10])
 
-    prop_pl = np.matmul(consensus.T, prev_pseudo_labels)
-    print(prop_pl)
-# def intersection(list1, list2):
-#     return list(set(list1) & set(list2))
-
-list1 = [1,1,2,3,4,1,2,1]
-list2 = [1,2,1,3,4,1,2,5]
-list_inter = rlcc(list1, list2)
-# print(list_inter)
+    prop_prev_pl = np.matmul(soft_output, consensus)
+    print(prop_prev_pl.shape)
+    # print('propogated',prop_prev_pl[:10][:])
+    
+    refined = np.add(alpha*pseudo_labels, (1-alpha)*prop_prev_pl)
+    # print('refined',refined[:10][:])
+    return refined
