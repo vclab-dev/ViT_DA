@@ -234,25 +234,26 @@ def train_target(args):
 			mem_label, soft_output, dd, mean_all_output, actual_label = obtain_label(dset_loaders['test'], netF, netB, netC, args) # test loader same as targe but has 3*batch_size compared to target and train
 			if iter_num == 0:
 				prev_mem_label = mem_label
-				mem_label = soft_output
+				if args.soft_pl:
+					mem_label = soft_output
 			else:
 				dict_pl = {'Actual Label':actual_label, 'Prev Pseudo Label': prev_mem_label, 'Curr Pseudo Labels': mem_label}
 				mem_label = rlcc(prev_mem_label, mem_label, soft_output, args.class_num)
 				if not args.soft_pl:
 					print('not soft')
-					mem_label = mem_label.argmax(axis=1)
+					mem_label = mem_label.argmax(axis=1).astype(int)
 					refined_label = mem_label
 				else:	
 					refined_label = mem_label.argmax(axis=1)
 				dict_pl.update({'Refined Pseudo Labels':refined_label})
 				prev_mem_label = refined_label
-
+				
+				# print(mem_label.dtype)
 				if iter_num % (interval_iter*10) == 0:
 					print('Write to CSV')
 					df = pd.DataFrame(dict_pl)
 					df.to_csv('rlcc_cmp.csv'+str(args.t), mode = 'a')
 			print('Completed finding Pseudo Labels')
-			
 			mem_label = torch.from_numpy(mem_label).cuda()
 			dd = torch.from_numpy(dd).cuda()
 			mean_all_output = torch.from_numpy(mean_all_output).cuda()
@@ -282,6 +283,8 @@ def train_target(args):
 			with torch.no_grad():
 				pred = mem_label[tar_idx]
 				#pred_soft = dd[tar_idx] # vikash
+			
+			# print(pred.dtype, outputs.dtype)
 			if args.soft_pl:
 				classifier_loss = SoftCrossEntropyLoss(outputs[0:args.batch_size], pred)
 			else:
@@ -483,7 +486,7 @@ def obtain_label(loader, netF, netB, netC, args):
 	args.out_file.flush()
 	print(log_str + '\n')
 	#exit(0)
-	return pred_label.astype('int'), all_output.cpu().numpy(), dd ,mean_all_output, all_label.cpu().numpy().astype(np.uint8)
+	return pred_label, all_output.cpu().numpy(), dd ,mean_all_output, all_label.cpu().numpy().astype(np.uint8)
 
 def distributed_sinkhorn(out,eps=0.1, niters=3,world_size=1):
 	Q = torch.exp(out / eps).t() # Q is K-by-B for consistency with notations from our paper
