@@ -239,4 +239,11 @@ class HLoss(nn.Module):
         b = F.softmax(x, dim=1) * F.log_softmax(x, dim=1)
         b = -1.0 * b.sum()
         return b
-        
+
+
+def SoftCrossEntropyLoss(logit, soft_pseudo_label):
+    p = F.log_softmax(logit, 1)
+#   w_labels = self.weights*y
+    # labels = y
+    loss = -(soft_pseudo_label*p).sum()
+    return loss

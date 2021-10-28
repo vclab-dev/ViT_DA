@@ -1,8 +1,6 @@
-# python image_source.py --trte val --output ckps/source/ --da uda --gpu_id 0 --dset office-home --max_epoch 100 --s 0;
-# python image_target.py --cls_par 0.3 --da uda --dset office-home --gpu_id 0 --s 0 --output_src ckps/source/ --output ckps/target/ --kd Ture;
-# python image_source.py --trte val --output ckps/source/ --da uda --gpu_id 0 --dset office-home --max_epoch 100 --s 1;
-# python image_target.py --cls_par 0.3 --da uda --dset office-home --gpu_id 0 --s 1  --output_src ckps/source/ --output ckps/target/ --kd Ture;
-# python image_source.py --trte val --output ckps/source/ --da uda --gpu_id 0 --dset office-home --max_epoch 100 --s 2;
-# python image_target.py --cls_par 0.3 --da uda --dset office-home --gpu_id 0 --s 2 --output_src ckps/source/ --output ckps/target/ --kd Ture;
+# python image_source_final.py --output san --gpu_id 0 --dset office-home --max_epoch 50 --s 3 --net deit_s
+# python image_source_final.py --output san --gpu_id 0 --dset office-home --max_epoch 50 --s 1 --net deit_s
+# python image_source_final.py --output san --gpu_id 0 --dset office-home --max_epoch 50 --s 2 --net deit_s
 
-python image_target_with_randaug.py --cls_par 0.3 --batch_size 32 --da uda --dset office-home --gpu_id 0 --s 1 --output_src ckps/source/ --output BMVC_SFMTDA --kd False --wandb 1
+python STDA_hp.py --batch_size 64 --dset office-home --net deit_s --gpu_id 0 --output optimised_STDA_wt --max_epoch 50 --interval 50 --output_src san --s 0 --wandb 1 --worker 4 -suffix ' 65x65 v2'
+# python STDA_hp.py --batch_size 64 --dset office-home --net deit_s --gpu_id 0 --output optimised_STDA_wt_soft_pl --max_epoch 1 --interval 5 --output_src san --s 0 --wandb 0 --worker 4 --soft_pl # > debug.txt

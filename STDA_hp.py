@@ -15,7 +15,7 @@ import random, pdb, math, copy
 from tqdm import tqdm
 from scipy.spatial.distance import cdist
 from sklearn.metrics import confusion_matrix
-from loss import KnowledgeDistillationLoss
+from loss import KnowledgeDistillationLoss, SoftCrossEntropyLoss
 from timm.data.auto_augment import rand_augment_transform # timm for randaugment
 from rlcc import rlcc
 np.set_printoptions(threshold=sys.maxsize)
@@ -220,18 +220,9 @@ def train_target(args):
 			inputs_test, _, tar_idx = iter_test.next()
 			#inputs_test_stg = strong_aug_list[tar_idx]
 			inputs_test_stg = get_strong_aug(dsets["strong_aug"], tar_idx)
-			# print("#####################################################################")
-			# print(inputs_test[0],stg_inputs_test[0],len(inputs_test),len(stg_inputs_test))
-			# # final_tensor = torch.cat([inputs_test,stg_inputs_test],dim=0)
-			# torchvision.utils.save_image(inputs_test,"tr1.png")
-			# torchvision.utils.save_image(stg_inputs_test,"tr2.png")
-			# exit(0)
 
-		# print(inputs_test.size())
-		# exit(0)
 		if inputs_test.size(0) == 1:  #Why this?
 			continue
-
 		if (iter_num % interval_iter == 0 and args.cls_par > 0):
 			netF.eval()
 			netB.eval()
@@ -243,19 +234,23 @@ def train_target(args):
 			mem_label, soft_output, dd, mean_all_output, actual_label = obtain_label(dset_loaders['test'], netF, netB, netC, args) # test loader same as targe but has 3*batch_size compared to target and train
 			if iter_num == 0:
 				prev_mem_label = mem_label
+				mem_label = soft_output
 			else:
 				dict_pl = {'Actual Label':actual_label, 'Prev Pseudo Label': prev_mem_label, 'Curr Pseudo Labels': mem_label}
 				mem_label = rlcc(prev_mem_label, mem_label, soft_output, args.class_num)
-				mem_label = mem_label.argmax(axis=1)
-				print("Refined Pseudo Classes: ", len(set(mem_label)))
+				if not args.soft_pl:
+					print('not soft')
+					mem_label = mem_label.argmax(axis=1)
+					refined_label = mem_label
+				else:	
+					refined_label = mem_label.argmax(axis=1)
+				dict_pl.update({'Refined Pseudo Labels':refined_label})
+				prev_mem_label = refined_label
 
-				dict_pl.update({'Refined Pseudo Labels':mem_label })
-
-				prev_mem_label = mem_label
 				if iter_num % (interval_iter*10) == 0:
 					print('Write to CSV')
 					df = pd.DataFrame(dict_pl)
-					df.to_csv('rlcc_cmp.csv', mode = 'a')
+					df.to_csv('rlcc_cmp.csv'+str(args.t), mode = 'a')
 			print('Completed finding Pseudo Labels')
 			
 			mem_label = torch.from_numpy(mem_label).cuda()
@@ -287,7 +282,11 @@ def train_target(args):
 			with torch.no_grad():
 				pred = mem_label[tar_idx]
 				#pred_soft = dd[tar_idx] # vikash
-			classifier_loss = nn.CrossEntropyLoss()(outputs[0:args.batch_size], pred)
+			if args.soft_pl:
+				classifier_loss = SoftCrossEntropyLoss(outputs[0:args.batch_size], pred)
+			else:
+				classifier_loss = nn.CrossEntropyLoss()(outputs[0:args.batch_size], pred)
+
 			classifier_loss *= args.cls_par
 			# m = 0.9*np.sin(np.minimum(np.pi/2,np.pi*iter_num/max_iter))
 			# classifier_loss *=m
@@ -484,7 +483,7 @@ def obtain_label(loader, netF, netB, netC, args):
 	args.out_file.flush()
 	print(log_str + '\n')
 	#exit(0)
-	return pred_label.astype('int'), all_output.cpu().numpy(), dd ,mean_all_output, all_label
+	return pred_label.astype('int'), all_output.cpu().numpy(), dd ,mean_all_output, all_label.cpu().numpy().astype(np.uint8)
 
 def distributed_sinkhorn(out,eps=0.1, niters=3,world_size=1):
 	Q = torch.exp(out / eps).t() # Q is K-by-B for consistency with notations from our paper
@@ -552,6 +551,8 @@ if __name__ == "__main__":
 	parser.add_argument('--issave', type=bool, default=True)
 	parser.add_argument('--wandb', type=int, default=0)
 	parser.add_argument('--earlystop', type=int, default=0)
+	parser.add_argument('--soft_pl', action='store_true')
+	parser.add_argument('--suffix', type=str, default='')
 	
 	args = parser.parse_args()
 
@@ -600,7 +601,7 @@ if __name__ == "__main__":
 		mode = 'online' if args.wandb else 'disabled'
 		
 		import wandb
-		wandb.init(project='STDA_Office-home', entity='vclab', name=f'{names[args.s]} to {names[args.t]} 65x65', reinit=True,mode=mode)
+		wandb.init(project='STDA_Office-home', entity='vclab', name=f'{names[args.s]} to {names[args.t]}'+args.suffix, reinit=True,mode=mode)
 
 		args.output_dir_src = osp.join(args.output_src, args.da, args.dset, names[args.s][0].upper())
 		args.output_dir = osp.join(args.output, 'STDA', args.dset, names[args.s][0].upper() + names[args.t][0].upper())

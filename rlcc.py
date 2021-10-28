@@ -1,14 +1,16 @@
 import numpy as np
 import sys
 from collections import Counter
+
+from sklearn.utils import axis0_safe_slice
 np.set_printoptions(threshold=sys.maxsize)
 
 def rlcc(prev_pseudo_labels, pseudo_labels, soft_output, class_num,  alpha=0.9):
 
     consensus=np.zeros((class_num, class_num))
-    for i in set(list(prev_pseudo_labels)):
+    for i in range(class_num):
         index_i = np.where(prev_pseudo_labels == i)
-        for j in set(list(pseudo_labels)):
+        for j in range(class_num):
             index_j = np.where(pseudo_labels == j)
             intersect = np.intersect1d(index_i, index_j)
             union = np.union1d([i], pseudo_labels)
@@ -27,7 +29,10 @@ def rlcc(prev_pseudo_labels, pseudo_labels, soft_output, class_num,  alpha=0.9):
     prop_prev_pl = np.matmul(soft_output, consensus)
     print(prop_prev_pl.shape)
     # print('propogated',prop_prev_pl[:10][:])
-    
+
     refined = np.add(alpha*pseudo_labels, (1-alpha)*prop_prev_pl)
-    # print('refined',refined[:10][:])
+    sum_check = refined.sum(axis=1)
+    for sample in range(sum_check.shape[0]):
+        refined[sample][:]=refined[sample][:]/sum_check[sample]
+
     return refined
