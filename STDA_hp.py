@@ -601,7 +601,7 @@ if __name__ == "__main__":
 		mode = 'online' if args.wandb else 'disabled'
 		
 		import wandb
-		wandb.init(project='STDA_Office-home', entity='vclab', name=f'{names[args.s]} to {names[args.t]}'+args.suffix, reinit=True,mode=mode)
+		wandb.init(project='STDA_Office-home', entity='vclab', name=f'{names[args.s]} to {names[args.t]} '+args.suffix, reinit=True,mode=mode)
 
 		args.output_dir_src = osp.join(args.output_src, args.da, args.dset, names[args.s][0].upper())
 		args.output_dir = osp.join(args.output, 'STDA', args.dset, names[args.s][0].upper() + names[args.t][0].upper())
