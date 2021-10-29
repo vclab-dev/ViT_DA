@@ -240,7 +240,7 @@ def train_target(args):
 				dict_pl = {'Actual Label':actual_label, 'Prev Pseudo Label': prev_mem_label, 'Curr Pseudo Labels': mem_label}
 				mem_label = rlcc(prev_mem_label, mem_label, soft_output, args.class_num)
 				if not args.soft_pl:
-					print('not soft')
+					# print('not soft')
 					mem_label = mem_label.argmax(axis=1).astype(int)
 					refined_label = mem_label
 				else:	
@@ -253,7 +253,7 @@ def train_target(args):
 					print('Write to CSV')
 					df = pd.DataFrame(dict_pl)
 					df.to_csv('rlcc_cmp.csv'+str(args.t), mode = 'a')
-			print('Completed finding Pseudo Labels')
+			print('Completed finding Pseudo Labels\n')
 			mem_label = torch.from_numpy(mem_label).cuda()
 			dd = torch.from_numpy(dd).cuda()
 			mean_all_output = torch.from_numpy(mean_all_output).cuda()
@@ -300,6 +300,8 @@ def train_target(args):
 			#     classifier_loss *= 0
 		else:
 			classifier_loss = torch.tensor(0.0).cuda()
+		
+		wandb.log({'classifier loss':classifier_loss})
 		#with torch.no_grad():
 			#gt_w = distributed_sinkhorn(outputs_test).detach()
 			#gt_s = distributed_sinkhorn(outputs_stg).detach()
@@ -342,7 +344,7 @@ def train_target(args):
 			cs_loss = consistency_loss.item()
 			#print("cls loss:{} en loss:{} gen loss:{} im_loss:{} consistancy_loss:{}".format(classifier_loss.item(), en_loss, gen_loss, im_loss.item(),cs_loss))
 			classifier_loss += consistency_loss
-		wandb.log({"cls loss":classifier_loss.item(), "en loss":en_loss, "gen loss":gen_loss, "im_loss":im_loss})
+		wandb.log({"Total loss":classifier_loss.item(), "en loss":en_loss, "gen loss":gen_loss, "im_loss":im_loss})
 			
 
 		#classifier_loss = L2(outputs_stg,outputs_test)
@@ -479,7 +481,7 @@ def obtain_label(loader, netF, netB, netC, args):
 		pred_label = labelset[pred_label]
 
 	acc = np.sum(pred_label == all_label.float().numpy()) / len(all_fea)
-	wandb.log({"Pseudo_Label_Accuracy":acc})
+	wandb.log({"Pseudo_Label_Accuracy":acc*100})
 	log_str = 'Accuracy = {:.2f}% -> {:.2f}%'.format(accuracy * 100, acc * 100)
 
 	args.out_file.write(log_str + '\n')
