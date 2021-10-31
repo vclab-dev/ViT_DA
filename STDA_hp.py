@@ -6,6 +6,7 @@ import torchvision
 import numpy as np
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 import torch.optim as optim
 from torchvision import transforms
 import network, loss
@@ -235,10 +236,10 @@ def train_target(args):
 			if iter_num == 0:
 				prev_mem_label = mem_label
 				if args.soft_pl:
-					mem_label = soft_output
+					mem_label = dd
 			else:
 				dict_pl = {'Actual Label':actual_label, 'Prev Pseudo Label': prev_mem_label, 'Curr Pseudo Labels': mem_label}
-				mem_label = rlcc(prev_mem_label, mem_label, soft_output, args.class_num)
+				mem_label = rlcc(prev_mem_label, mem_label, dd, args.class_num)
 				if not args.soft_pl:
 					# print('not soft')
 					mem_label = mem_label.argmax(axis=1).astype(int)
@@ -247,7 +248,6 @@ def train_target(args):
 					refined_label = mem_label.argmax(axis=1)
 				dict_pl.update({'Refined Pseudo Labels':refined_label})
 				prev_mem_label = refined_label
-				
 				# print(mem_label.dtype)
 				if iter_num % (interval_iter*10) == 0:
 					print('Write to CSV')
@@ -285,8 +285,11 @@ def train_target(args):
 				#pred_soft = dd[tar_idx] # vikash
 			
 			# print(pred.dtype, outputs.dtype)
+			sig = 1/(1+np.exp(-(iter_num/max_iter))) 
 			if args.soft_pl:
 				classifier_loss = SoftCrossEntropyLoss(outputs[0:args.batch_size], pred)
+				# classifier_loss2 = nn.CrossEntropyLoss()(outputs[0:args.batch_size], torch.argmax(pred, dim=1))
+				# classifier_loss = sig*classifier_loss2 + (1-sig)*classifier_loss1
 			else:
 				classifier_loss = nn.CrossEntropyLoss()(outputs[0:args.batch_size], pred)
 
@@ -349,9 +352,7 @@ def train_target(args):
 
 		#classifier_loss = L2(outputs_stg,outputs_test)
 		optimizer.zero_grad()
-		# print("Loss: ", classifier_loss)
 		classifier_loss.backward()
-		#wandb.log({'Adaptation: train_classifier_loss': classifier_loss.item()})
 		print(f'Task: {args.name}, Iter:{iter_num}/{max_iter} \t train_classifier_loss {classifier_loss.item()}')
 		optimizer.step()
 		# EMA update for the teacher
@@ -455,7 +456,7 @@ def obtain_label(loader, netF, netB, netC, args):
 	initc = aff.transpose().dot(all_fea)
 	initc = initc / (1e-8 + aff.sum(axis=0)[:, None]) # got the initial normalized centroid (k*(d+1))
 	cls_count = np.eye(K)[predict].sum(axis=0) # total number of prediction per class
-	labelset = np.where(cls_count > args.threshold) ### index of classes for which same sampeled have been detected # returns tuple
+	labelset = np.where(cls_count >= args.threshold) ### index of classes for which same sampeled have been detected # returns tuple
 	labelset = labelset[0] # index of classes for which samples per class greater than threshold
 	
 	#dd = cdist(all_fea, initc[labelset], args.distance) # N*K
@@ -488,7 +489,8 @@ def obtain_label(loader, netF, netB, netC, args):
 	args.out_file.flush()
 	print(log_str + '\n')
 	#exit(0)
-	return pred_label, all_output.cpu().numpy(), dd ,mean_all_output, all_label.cpu().numpy().astype(np.uint8)
+	dd = F.softmax(torch.from_numpy(dd), dim=1)
+	return pred_label, all_output.cpu().numpy(), dd.numpy().astype('float32') ,mean_all_output, all_label.cpu().numpy().astype(np.uint8)
 
 def distributed_sinkhorn(out,eps=0.1, niters=3,world_size=1):
 	Q = torch.exp(out / eps).t() # Q is K-by-B for consistency with notations from our paper
@@ -520,7 +522,7 @@ if __name__ == "__main__":
 	parser = argparse.ArgumentParser(description='Rand-Augment')
 	parser.add_argument('--gpu_id', type=str, nargs='?', default='0', help="device id to run")
 	parser.add_argument('--s', type=int, default=0, help="source")
-	# parser.add_argument('--t', type=int, default=1, help="target")
+	parser.add_argument('--t', type=int, default=1, help="target")
 	parser.add_argument('--max_epoch', type=int, default=3, help="max iterations")
 	parser.add_argument('--interval', type=int, default=20)
 	parser.add_argument('--batch_size', type=int, default=64, help="batch_size")
