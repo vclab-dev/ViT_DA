@@ -143,10 +143,12 @@ def cal_acc(loader, netF, netB, netC, flag=False):
 def get_pseudo_gt(data_batch, netB, netF,netC):
     netB.eval()
     netF.eval()
+    netC.eval()
     features_test = netB(netF(data_batch))
     outputs_test = netC(features_test)
     netB.train()
     netF.train()
+    netC.train()
     return outputs_test
 
 
@@ -183,10 +185,10 @@ def train_target(args):
     netB.load_state_dict(torch.load(modelpath))
     modelpath = args.output_dir_src + '/source_C.pt'
     netC.load_state_dict(torch.load(modelpath))
-    netC.eval()
+    # netC.eval()
     print('Model Loaded')
-    for k, v in netC.named_parameters():
-        v.requires_grad = False
+    # for k, v in netC.named_parameters():
+    #     v.requires_grad = False
     ### add teacher module
     # if args.net[0:3] == 'res':
     #     netF_t = network.ResBase(res_name=args.net, se=args.se, nl=args.nl).cuda()
@@ -220,14 +222,14 @@ def train_target(args):
             v.requires_grad = False
     for k, v in netC.named_parameters():
         if args.lr_decay2 > 0:
-            param_group_cls += [{'params': v, 'lr': args.lr * args.lr_decay2}]
+            param_group += [{'params': v, 'lr': args.lr * args.lr_decay2}]
         else:
             v.requires_grad = False
 
     optimizer = optim.SGD(param_group)
     optimizer = op_copy(optimizer)
-    optimizer2 = optim.SGD(param_group_cls)
-    optimizer2 = op_copy(optimizer2)
+    # optimizer2 = optim.SGD(param_group_cls)
+    # optimizer2 = op_copy(optimizer2)
 
     max_iter = args.max_epoch * len(dset_loaders["target"])
     interval_iter = max_iter // args.interval
@@ -255,6 +257,7 @@ def train_target(args):
         if iter_num % interval_iter == 0 and args.cls_par > 0:
             netF.eval()
             netB.eval()
+            netC.eval()
             # netF_t.eval()
             # netB_t.eval()
             ################################ Done ###################################
@@ -267,6 +270,7 @@ def train_target(args):
 
             netF.train()
             netB.train()
+            netC.train()
 
         inputs_test_wk = inputs_test.cuda()
         inputs_test_stg = inputs_test_stg.cuda()
@@ -301,6 +305,8 @@ def train_target(args):
             #     classifier_loss *= 0
         else:
             classifier_loss = torch.tensor(0.0).cuda()
+        wandb.log({'classifier loss':classifier_loss})
+
         #with torch.no_grad():
             #gt_w = distributed_sinkhorn(outputs_test).detach()
             #gt_s = distributed_sinkhorn(outputs_stg).detach()
@@ -344,7 +350,7 @@ def train_target(args):
             cs_loss = consistency_loss.item()
             #print("cls loss:{} en loss:{} gen loss:{} im_loss:{} consistancy_loss:{}".format(classifier_loss.item(), en_loss, gen_loss, im_loss.item(),cs_loss))
             classifier_loss += consistency_loss
-        wandb.log({"cls loss":classifier_loss.item(), "en loss":en_loss, "gen loss":gen_loss, "im_loss":im_loss})
+        wandb.log({"Total loss":classifier_loss.item(), "en loss":en_loss, "gen loss":gen_loss, "im_loss":im_loss})
             
 
         #classifier_loss = L2(outputs_stg,outputs_test)
@@ -363,6 +369,7 @@ def train_target(args):
         if iter_num % interval_iter == 0 or iter_num == max_iter:
             netF.eval()
             netB.eval()
+            netC.eval()
             acc_eval_dn, _ = cal_acc(dset_loaders["eval_dn"], netF, netB, netC, False)
             wandb.log({"STDA_Test_Accuracy":acc_eval_dn})
 
@@ -384,6 +391,7 @@ def train_target(args):
 
             netF.train()
             netB.train()
+            netC.train()
 
     if args.issave:
         torch.save(netF.state_dict(), osp.join(args.output_dir, "target_F_" + args.savename + ".pt"))
@@ -479,6 +487,8 @@ def obtain_label(loader, netF, netB, netC, args):
         pred_label = labelset[pred_label]
 
     acc = np.sum(pred_label == all_label.float().numpy()) / len(all_fea)
+    wandb.log({"Pseudo_Label_Accuracy":acc*100})
+ 
     log_str = 'Accuracy = {:.2f}% -> {:.2f}%'.format(accuracy * 100, acc * 100)
 
     args.out_file.write(log_str + '\n')
@@ -553,6 +563,7 @@ if __name__ == "__main__":
     parser.add_argument('--issave', type=bool, default=True)
     parser.add_argument('--wandb', type=int, default=0)
     parser.add_argument('--earlystop', type=int, default=0)
+    parser.add_argument('--suffix', type=str, default='')
     
     args = parser.parse_args()
 
@@ -601,7 +612,10 @@ if __name__ == "__main__":
         mode = 'online' if args.wandb else 'disabled'
         
         import wandb
-        wandb.init(project='EarlyStop_STDA_DomainNet', entity='vclab', name=f'{names[args.s]} to {names[args.t]}', reinit=True,mode=mode)
+        if args.dset == 'office-home':
+            wandb.init(project='STDA_Office31', entity='vclab', name=f'{names[args.s]} to {names[args.t]} '+args.suffix, reinit=True,mode=mode)
+        if args.dset == 'office':
+            wandb.init(project='STDA_Office31', entity='vclab', name=f'{names[args.s]} to {names[args.t]} '+args.suffix, reinit=True,mode=mode)
 
         args.output_dir_src = osp.join(args.output_src, args.da, args.dset, names[args.s][0].upper())
         args.output_dir = osp.join(args.output, 'STDA', args.dset, names[args.s][0].upper() + names[args.t][0].upper())
