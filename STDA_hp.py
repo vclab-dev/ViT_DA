@@ -283,10 +283,12 @@ def train_target(args):
             # print(pred.dtype, outputs.dtype)
             sig = 1/(1+np.exp(-(iter_num/max_iter))) 
             if args.soft_pl:
+                print("Soft Cross Entropy")
                 classifier_loss = SoftCrossEntropyLoss(outputs[0:args.batch_size], pred)
                 # classifier_loss2 = nn.CrossEntropyLoss()(outputs[0:args.batch_size], torch.argmax(pred, dim=1))
                 # classifier_loss = sig*classifier_loss2 + (1-sig)*classifier_loss1
             else:
+                print("Hard Cross Entropy")
                 classifier_loss = nn.CrossEntropyLoss()(outputs[0:args.batch_size], pred)
 
             classifier_loss *= args.cls_par
@@ -607,7 +609,7 @@ if __name__ == "__main__":
         
         import wandb
         if args.dset == 'office-home':
-            wandb.init(project='STDA_Office31', entity='vclab', name=f'{names[args.s]} to {names[args.t]} '+args.suffix, reinit=True,mode=mode)
+            wandb.init(project='STDA_Office-home', entity='vclab', name=f'{names[args.s]} to {names[args.t]} '+args.suffix, reinit=True,mode=mode)
         if args.dset == 'office':
             wandb.init(project='STDA_Office31', entity='vclab', name=f'{names[args.s]} to {names[args.t]} '+args.suffix, reinit=True,mode=mode)
 
