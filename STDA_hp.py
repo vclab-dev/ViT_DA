@@ -162,6 +162,9 @@ def train_target(args):
     elif args.net == 'deit_s':
         netF = torch.hub.load('facebookresearch/deit:main', 'deit_small_patch16_224', pretrained=True).cuda()
         netF.in_features = 1000
+    elif args.net == 'deit_s_distilled':
+        netF = torch.hub.load('facebookresearch/deit:main', 'deit_small_distilled_patch16_224', pretrained=True).cuda()
+        netF.in_features = 1000
     netB = network.feat_bootleneck(type=args.classifier, feature_dim=netF.in_features,
                                    bottleneck_dim=args.bottleneck).cuda()
     netC = network.feat_classifier(type=args.layer, class_num=args.class_num, bottleneck_dim=args.bottleneck).cuda()
