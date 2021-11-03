@@ -231,26 +231,27 @@ def train_target(args):
             ################################ Done ###################################
             print('Starting to find Pseudo Labels! May take a while :)')
             mem_label, soft_output, dd, mean_all_output, actual_label = obtain_label(dset_loaders['test'], netF, netB, netC, args) # test loader same as targe but has 3*batch_size compared to target and train
-            if iter_num == 0:
-                prev_mem_label = mem_label
-                if args.soft_pl:
-                    mem_label = dd
-            else:
-                dict_pl = {'Actual Label':actual_label, 'Prev Pseudo Label': prev_mem_label, 'Curr Pseudo Labels': mem_label}
-                mem_label = rlcc(prev_mem_label, mem_label, dd, args.class_num)
-                if not args.soft_pl:
-                    # print('not soft')
-                    mem_label = mem_label.argmax(axis=1).astype(int)
-                    refined_label = mem_label
-                else:	
-                    refined_label = mem_label.argmax(axis=1)
-                dict_pl.update({'Refined Pseudo Labels':refined_label})
-                prev_mem_label = refined_label
-                # print(mem_label.dtype)
-                if iter_num % (interval_iter*10) == 0:
-                    print('Write to CSV')
-                    df = pd.DataFrame(dict_pl)
-                    df.to_csv('rlcc_cmp.csv'+str(args.t), mode = 'a')
+            if args.rlcc:
+                if iter_num == 0:
+                    prev_mem_label = mem_label
+                    if args.soft_pl:
+                        mem_label = dd
+                else:
+                    dict_pl = {'Actual Label':actual_label, 'Prev Pseudo Label': prev_mem_label, 'Curr Pseudo Labels': mem_label}
+                    mem_label = rlcc(prev_mem_label, mem_label, dd, args.class_num)
+                    if not args.soft_pl:
+                        # print('not soft')
+                        mem_label = mem_label.argmax(axis=1).astype(int)
+                        refined_label = mem_label
+                    else:	
+                        refined_label = mem_label.argmax(axis=1)
+                    dict_pl.update({'Refined Pseudo Labels':refined_label})
+                    prev_mem_label = refined_label
+                    # print(mem_label.dtype)
+                    # if iter_num % (interval_iter*10) == 0:
+                    #     print('Write to CSV')
+                    #     df = pd.DataFrame(dict_pl)
+                    #     df.to_csv('rlcc_cmp.csv'+str(args.t), mode = 'a')
             print('Completed finding Pseudo Labels\n')
             mem_label = torch.from_numpy(mem_label).cuda()
             dd = torch.from_numpy(dd).cuda()
@@ -291,7 +292,7 @@ def train_target(args):
                 # classifier_loss2 = nn.CrossEntropyLoss()(outputs[0:args.batch_size], torch.argmax(pred, dim=1))
                 # classifier_loss = sig*classifier_loss2 + (1-sig)*classifier_loss1
             else:
-                print("Hard Cross Entropy")
+                # print("Hard Cross Entropy")
                 classifier_loss = nn.CrossEntropyLoss()(outputs[0:args.batch_size], pred)
 
             classifier_loss *= args.cls_par
@@ -335,7 +336,7 @@ def train_target(args):
             #wandb.log({"Im Loss":im_loss.item()})
             #wandb.log({'CE Loss': classifier_loss.item()})
             classifier_loss += im_loss
-        args.consistancy = True
+        # args.consistancy = True
         if args.consistancy:
             expectation_ratio = mean_all_output/torch.mean(softmax_out[0:args.batch_size],dim=0)
             #consistency_loss = 0.5*(dist_loss(outputs[args.batch_size:],outputs[0:args.batch_size]) + dist_loss(outputs[0:args.batch_size],outputs[args.batch_size:]))
@@ -559,10 +560,12 @@ if __name__ == "__main__":
     parser.add_argument('--output_src', type=str, default='san', help='Load SRC training wt path')
     parser.add_argument('--da', type=str, default='uda', choices=['uda', 'pda'])
     parser.add_argument('--issave', type=bool, default=True)
-    parser.add_argument('--wandb', type=int, default=0)
+    parser.add_argument('--wandb', type=int, default=1)
     parser.add_argument('--earlystop', type=int, default=0)
     parser.add_argument('--soft_pl', action='store_true')
     parser.add_argument('--suffix', type=str, default='')
+    parser.add_argument('--consistancy', type=int, default=1)
+    parser.add_argument('--rlcc', action='store_true')
     
     args = parser.parse_args()
 

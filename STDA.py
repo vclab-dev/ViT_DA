@@ -64,9 +64,6 @@ def strong_augment(resize_size=256, crop_size=224, alexnet=False):
         normalize
     ])
 
-
-
-
 def image_test(resize_size=256, crop_size=224, alexnet=False):
     if not alexnet:
         normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
@@ -340,7 +337,7 @@ def train_target(args):
             #wandb.log({"Im Loss":im_loss.item()})
             #wandb.log({'CE Loss': classifier_loss.item()})
             classifier_loss += im_loss
-        args.consistancy = True
+        # args.consistancy = True
         if args.consistancy:
             expectation_ratio = mean_all_output/torch.mean(softmax_out[0:args.batch_size],dim=0)
             #consistency_loss = 0.5*(dist_loss(outputs[args.batch_size:],outputs[0:args.batch_size]) + dist_loss(outputs[0:args.batch_size],outputs[args.batch_size:]))
@@ -567,6 +564,7 @@ if __name__ == "__main__":
     parser.add_argument('--wandb', type=int, default=0)
     parser.add_argument('--earlystop', type=int, default=0)
     parser.add_argument('--suffix', type=str, default='')
+    parser.add_argument('--consistancy', type=int, default=1)
     
     args = parser.parse_args()
 
