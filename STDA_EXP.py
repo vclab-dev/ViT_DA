@@ -33,7 +33,6 @@ def lr_scheduler(optimizer, iter_num, max_iter, gamma=10, power=0.75):
         param_group['nesterov'] = True
     return optimizer
 
-
 def image_train(resize_size=256, crop_size=224, alexnet=False):
     if not alexnet:
         normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
@@ -48,8 +47,6 @@ def image_train(resize_size=256, crop_size=224, alexnet=False):
         normalize
     ])
 
-
-#tfm = rand_augment_transform(config_str='rand-m9-mstd0.5')
 def strong_augment(resize_size=256, crop_size=224, alexnet=False):
     if not alexnet:
         normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
@@ -64,8 +61,35 @@ def strong_augment(resize_size=256, crop_size=224, alexnet=False):
         normalize
     ])
 
+def init_src_model_load(args):
+    ## set base network
+    if args.net[0:3] == 'res':
+        netF = network.ResBase(res_name=args.net, se=args.se, nl=args.nl).cuda()
+    elif args.net[0:3] == 'vgg':
+        netF = network.VGGBase(vgg_name=args.net).cuda()
+    elif args.net == 'vit':
+        netF = network.ViT().cuda()
+    elif args.net == 'deit_s':
+        netF = torch.hub.load('facebookresearch/deit:main', 'deit_small_patch16_224', pretrained=True).cuda()
+        netF.in_features = 1000
+    netB = network.feat_bootleneck(type=args.classifier, feature_dim=netF.in_features,
+                                   bottleneck_dim=args.bottleneck).cuda()
+    netC = network.feat_classifier(type=args.layer, class_num=args.class_num, bottleneck_dim=args.bottleneck).cuda()
 
 
+    modelpath = args.output_dir_src + '/source_F.pt'
+    netF.load_state_dict(torch.load(modelpath))
+    
+    modelpath = args.output_dir_src + '/source_B.pt'
+    netB.load_state_dict(torch.load(modelpath))
+
+    modelpath = args.output_dir_src + '/source_C.pt'
+    netC.load_state_dict(torch.load(modelpath))
+
+    netC.eval()
+    print(f'Model Loaded from {modelpath}')
+
+    return netF, netB, netC
 
 def image_test(resize_size=256, crop_size=224, alexnet=False):
     if not alexnet:
@@ -79,7 +103,6 @@ def image_test(resize_size=256, crop_size=224, alexnet=False):
         transforms.ToTensor(),
         normalize
     ])
-
 
 def data_load(args):
     ## prepare data
@@ -149,62 +172,15 @@ def get_pseudo_gt(data_batch, netB, netF,netC):
     netF.train()
     return outputs_test
 
-
 def get_strong_aug(dataset, idx):
     aug_img = torch.cat([dataset[i][0].unsqueeze(dim=0) for i in idx],dim=0)
     return aug_img
 
-def train_target(args):
-    dset_loaders,dsets = data_load(args)
-    # get strong aug in a list
-    # strong_aug_loader = iter(dset_loaders["strong_aug"])
-    # strong_aug_list = torch.cat([strong_aug_loader.next()[0] for i in range(len(strong_aug_loader))], dim=0) # return total_sample*3*224*224
-    ## set base network
-    if args.net[0:3] == 'res':
-        netF = network.ResBase(res_name=args.net, se=args.se, nl=args.nl).cuda()
-    elif args.net[0:3] == 'vgg':
-        netF = network.VGGBase(vgg_name=args.net).cuda()
-    elif args.net == 'vit':
-        netF = network.ViT().cuda()
-    elif args.net == 'deit_s':
-        netF = torch.hub.load('facebookresearch/deit:main', 'deit_small_patch16_224', pretrained=True).cuda()
-        netF.in_features = 1000
-    netB = network.feat_bootleneck(type=args.classifier, feature_dim=netF.in_features,
-                                   bottleneck_dim=args.bottleneck).cuda()
-    netC = network.feat_classifier(type=args.layer, class_num=args.class_num, bottleneck_dim=args.bottleneck).cuda()
+def train_target(args, netF, netB, netC):
+    dset_loaders,dsets = data_load(args) 
 
-    #print(netF.state_dict().keys())
-    
-
-    modelpath = args.output_dir_src + '/source_F.pt'
-    netF.load_state_dict(torch.load(modelpath))
-    
-    modelpath = args.output_dir_src + '/source_B.pt'
-    netB.load_state_dict(torch.load(modelpath))
-    modelpath = args.output_dir_src + '/source_C.pt'
-    netC.load_state_dict(torch.load(modelpath))
-    netC.eval()
-    print('Model Loaded')
     for k, v in netC.named_parameters():
         v.requires_grad = False
-    ### add teacher module
-    # if args.net[0:3] == 'res':
-    #     netF_t = network.ResBase(res_name=args.net, se=args.se, nl=args.nl).cuda()
-    # elif args.net[0:3] == 'vgg':
-    #     netF_t = network.VGGBase(vgg_name=args.net).cuda()
-    # elif args.net == 'vit':
-    #     netF_t = network.ViT().cuda()
-    # netB_t = network.feat_bootleneck(type=args.classifier, feature_dim=netF.in_features,
-    #                                bottleneck_dim=args.bottleneck).cuda()
-    # ### initial from student
-    # netF_t.load_state_dict(netF.state_dict())
-    # netB_t.load_state_dict(netB.state_dict())
-
-    # ### remove grad
-    # for k, v in netF_t.named_parameters():
-    #     v.requires_grad = False
-    # for k, v in netB_t.named_parameters():
-    #     v.requires_grad = False
 
     param_group = []
     param_group_cls = []
@@ -226,8 +202,7 @@ def train_target(args):
 
     optimizer = optim.SGD(param_group)
     optimizer = op_copy(optimizer)
-    optimizer2 = optim.SGD(param_group_cls)
-    optimizer2 = op_copy(optimizer2)
+
 
     max_iter = args.max_epoch * len(dset_loaders["target"])
     interval_iter = max_iter // args.interval
@@ -520,6 +495,7 @@ if __name__ == "__main__":
     # parser.add_argument('--t', type=int, default=1, help="target")
     parser.add_argument('--max_epoch', type=int, default=3, help="max iterations")
     parser.add_argument('--interval', type=int, default=15)
+    parser.add_argument('--postfix', type=str, default=None)
     parser.add_argument('--batch_size', type=int, default=64, help="batch_size")
     parser.add_argument('--worker', type=int, default=4, help="number of workers")
     parser.add_argument('--dset', type=str, default='office-home',
@@ -583,7 +559,10 @@ if __name__ == "__main__":
     random.seed(SEED)
     # torch.backends.cudnn.deterministic = True
 
-    for i in range(len(names)):
+    args.output_dir_src = osp.join(args.output_src, args.da, args.dset, names[args.s][0].upper())
+    netF, netB, netC = init_src_model_load(args)
+
+    for i in [3,2,1,0]:
 
         if i == args.s:
             continue
@@ -601,10 +580,8 @@ if __name__ == "__main__":
         mode = 'online' if args.wandb else 'disabled'
         
         import wandb
-        #wandb.init(project='EarlyStop_STDA_DomainNet', entity='vclab', name=f'{names[args.s]} to {names[args.t]}', reinit=True,mode=mode)
-        wandb.init(project='Dual Clustering', entity='vclab', name=f'{names[args.s]} to {names[args.t]} only cls_loss', reinit=True,mode=mode)
+        wandb.init(project='EarlyStop_STDA_DomainNet', entity='vclab', name=f'Head Replace {names[args.s]} to {names[args.t]} {args.postfix}', reinit=True,mode=mode)
 
-        args.output_dir_src = osp.join(args.output_src, args.da, args.dset, names[args.s][0].upper())
         args.output_dir = osp.join(args.output, 'STDA', args.dset, names[args.s][0].upper() + names[args.t][0].upper())
         args.name = names[args.s][0].upper() + names[args.t][0].upper()
 
@@ -618,4 +595,4 @@ if __name__ == "__main__":
         args.out_file = open(osp.join(args.output_dir, 'log_' + args.savename + '.txt'), 'w')
         args.out_file.write(print_args(args) + '\n')
         args.out_file.flush()
-        train_target(args)
+        netF, netB, netC = train_target(args, netF, netB, netC)

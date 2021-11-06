@@ -1,0 +1,1 @@
+python STDA_hp.py --cls_par 0.3 --batch_size 56 --dset office-home --gpu_id 1 --output delete --output_src san --s 0 --wandb 1 --worker 0 --net deit_s --fbnm 1 --consist 1 --max_epoch 5

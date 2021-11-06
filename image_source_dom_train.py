@@ -73,7 +73,8 @@ def data_load(args):
         return transforms.Compose([
             transforms.Resize((resize_size, resize_size)),
             transforms.RandomCrop(crop_size),
-            rand_augment_transform(config_str='rand-m9-mstd0.5',hparams={'translate_const': 117}),
+            torchvision.transforms.ColorJitter(),
+            # rand_augment_transform(config_str='rand-m9-mstd0.5',hparams={'translate_const': 117}),
             transforms.ToTensor(),
             normalize
         ])

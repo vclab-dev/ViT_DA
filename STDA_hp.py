@@ -1,10 +1,12 @@
 import argparse
 import os, sys
+import pandas as pd
 import os.path as osp
 import torchvision
 import numpy as np
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 import torch.optim as optim
 from torchvision import transforms
 import network, loss
@@ -14,15 +16,75 @@ import random, pdb, math, copy
 from tqdm import tqdm
 from scipy.spatial.distance import cdist
 from sklearn.metrics import confusion_matrix
-from loss import KnowledgeDistillationLoss
+from loss import KnowledgeDistillationLoss, SoftCrossEntropyLoss
 from timm.data.auto_augment import rand_augment_transform # timm for randaugment
+from rlcc import rlcc
+np.set_printoptions(threshold=sys.maxsize)
+import wandb
+#os.environ["WANDB_RUN_ID"] = wandb.util.generate_id()
+
+def get_embedding_threshold(arr):
+    """
+    Given an 1-d array cluster it into two group and choose threshold which separates these two clusters
+    """
+    arr.sort()
+    min_sum = 10000000.0
+    threshold = 0.0
+    for i in range(1, len(arr)-1):
+        temp_min_sum = abs(arr[0] - arr[i]) + abs(arr[i+1] - arr[-1])
+        if temp_min_sum < min_sum:
+            min_sum = temp_min_sum
+            threshold = (arr[i] + arr[i+1])/2
+    return threshold
 
 
+def grad_embedding(feat, pseudo_gt, netC):
+    """
+    calculate gradient embedding for netC layer for each sample
+    """
+    for p in netC.parameters():
+        p.requires_grad = True
+    feat = torch.from_numpy(feat)[:,0:-1].cuda()
+    output = netC(feat)
+    #print("Model:",netC)
+    total_grad = {"0":[], "1":[],"2":[]} # 2 corresponds grad_norm w.r.t to total parameter and 0 or 1 id for bias, nor sure about which one
+    for i in range(len(pseudo_gt)):
+        p_hat, p = torch.unsqueeze(output[i],0), torch.tensor([pseudo_gt[i]]).view(-1).cuda()
+        #print(p_hat.shape, p.shape)
+        instance_loss = nn.CrossEntropyLoss()(p_hat, p)
+        #instance_loss.requires_grad = True
+        instance_loss.backward(retain_graph=True) #retain_graph=True
+        grads = []
+        for p in netC.parameters():
+            #print(p.grad)
+            temp_grad = p.grad.view(-1).detach().cpu().numpy()
+            #print("temp_grad shape:",temp_grad.shape)
+            grads.append(temp_grad)
+            p.grad = None
+            # param_norm = p.grad.data.norm(2)
+            # total_norm += param_norm.item() ** 2
+            # total_norm = total_norm ** (1. / 2)
+        #print("Grad List:",grads)
+        #print("Grad Element:",grads[0].shape)
+        grads = np.array(grads)
+        #print("Grads Shape:",grads.shape)
+        for i in range(len(grads)):
+            total_grad[str(i)].append(np.linalg.norm(grads[i]))
+        #grad_norm = np.array([np.linalg.norm(i) for i in grads])
+        #total_grad.append(grad_norm)
+        # # if len(total_grad):
+        # #     sample_gard = grad_norm - total_grad[-1]
+        #print("grad Norm=: for instance {} is =:{}".format(i,np.array([np.linalg.norm(i) for i in grads])))
+        # if (i+1)%5==0:
+        #     exit(0)
+        threshold = get_embedding_threshold(total_grad["2"])
+        total_grad["threshold"] = threshold
+        #print(threshold)
+    return total_grad
 def op_copy(optimizer):
     for param_group in optimizer.param_groups:
         param_group['lr0'] = param_group['lr']
     return optimizer
-
 
 def lr_scheduler(optimizer, iter_num, max_iter, gamma=10, power=0.75):
     decay = (1 + gamma * iter_num / max_iter) ** (-power)
@@ -32,7 +94,6 @@ def lr_scheduler(optimizer, iter_num, max_iter, gamma=10, power=0.75):
         param_group['momentum'] = 0.9
         param_group['nesterov'] = True
     return optimizer
-
 
 def image_train(resize_size=256, crop_size=224, alexnet=False):
     if not alexnet:
@@ -48,7 +109,6 @@ def image_train(resize_size=256, crop_size=224, alexnet=False):
         normalize
     ])
 
-
 #tfm = rand_augment_transform(config_str='rand-m9-mstd0.5')
 def strong_augment(resize_size=256, crop_size=224, alexnet=False):
     if not alexnet:
@@ -63,9 +123,6 @@ def strong_augment(resize_size=256, crop_size=224, alexnet=False):
         transforms.ToTensor(),
         normalize
     ])
-
-
-
 
 def image_test(resize_size=256, crop_size=224, alexnet=False):
     if not alexnet:
@@ -156,10 +213,6 @@ def get_strong_aug(dataset, idx):
 
 def train_target(args):
     dset_loaders,dsets = data_load(args)
-    # get strong aug in a list
-    # strong_aug_loader = iter(dset_loaders["strong_aug"])
-    # strong_aug_list = torch.cat([strong_aug_loader.next()[0] for i in range(len(strong_aug_loader))], dim=0) # return total_sample*3*224*224
-    ## set base network
     if args.net[0:3] == 'res':
         netF = network.ResBase(res_name=args.net, se=args.se, nl=args.nl).cuda()
     elif args.net[0:3] == 'vgg':
@@ -168,6 +221,9 @@ def train_target(args):
         netF = network.ViT().cuda()
     elif args.net == 'deit_s':
         netF = torch.hub.load('facebookresearch/deit:main', 'deit_small_patch16_224', pretrained=True).cuda()
+        netF.in_features = 1000
+    elif args.net == 'deit_s_distilled':
+        netF = torch.hub.load('facebookresearch/deit:main', 'deit_small_distilled_patch16_224', pretrained=True).cuda()
         netF.in_features = 1000
     netB = network.feat_bootleneck(type=args.classifier, feature_dim=netF.in_features,
                                    bottleneck_dim=args.bottleneck).cuda()
@@ -183,28 +239,10 @@ def train_target(args):
     netB.load_state_dict(torch.load(modelpath))
     modelpath = args.output_dir_src + '/source_C.pt'
     netC.load_state_dict(torch.load(modelpath))
-    netC.eval()
+    # netC.eval()
     print('Model Loaded')
-    for k, v in netC.named_parameters():
-        v.requires_grad = False
-    ### add teacher module
-    # if args.net[0:3] == 'res':
-    #     netF_t = network.ResBase(res_name=args.net, se=args.se, nl=args.nl).cuda()
-    # elif args.net[0:3] == 'vgg':
-    #     netF_t = network.VGGBase(vgg_name=args.net).cuda()
-    # elif args.net == 'vit':
-    #     netF_t = network.ViT().cuda()
-    # netB_t = network.feat_bootleneck(type=args.classifier, feature_dim=netF.in_features,
-    #                                bottleneck_dim=args.bottleneck).cuda()
-    # ### initial from student
-    # netF_t.load_state_dict(netF.state_dict())
-    # netB_t.load_state_dict(netB.state_dict())
-
-    # ### remove grad
-    # for k, v in netF_t.named_parameters():
-    #     v.requires_grad = False
-    # for k, v in netB_t.named_parameters():
-    #     v.requires_grad = False
+    # for k, v in netC.named_parameters():
+    # 	v.requires_grad = False
 
     param_group = []
     param_group_cls = []
@@ -220,20 +258,21 @@ def train_target(args):
             v.requires_grad = False
     for k, v in netC.named_parameters():
         if args.lr_decay2 > 0:
-            param_group_cls += [{'params': v, 'lr': args.lr * args.lr_decay2}]
+            param_group += [{'params': v, 'lr': args.lr * args.lr_decay2}]
         else:
             v.requires_grad = False
 
     optimizer = optim.SGD(param_group)
     optimizer = op_copy(optimizer)
-    optimizer2 = optim.SGD(param_group_cls)
-    optimizer2 = op_copy(optimizer2)
+    # optimizer2 = optim.SGD(param_group_cls)
+    # optimizer2 = op_copy(optimizer2)
 
     max_iter = args.max_epoch * len(dset_loaders["target"])
     interval_iter = max_iter // args.interval
     iter_num = 0
 
     print('Training Started')
+    max_acc = 0
     while iter_num < max_iter:
         try:
             inputs_test, _, tar_idx = iter_test.next()
@@ -242,31 +281,45 @@ def train_target(args):
             inputs_test, _, tar_idx = iter_test.next()
             #inputs_test_stg = strong_aug_list[tar_idx]
             inputs_test_stg = get_strong_aug(dsets["strong_aug"], tar_idx)
-            # print("#####################################################################")
-            # print(inputs_test[0],stg_inputs_test[0],len(inputs_test),len(stg_inputs_test))
-            # # final_tensor = torch.cat([inputs_test,stg_inputs_test],dim=0)
-            # torchvision.utils.save_image(inputs_test,"tr1.png")
-            # torchvision.utils.save_image(stg_inputs_test,"tr2.png")
-            # exit(0)
 
-        if inputs_test.size(0) == 1:
+        if inputs_test.size(0) == 1:  #Why this?
             continue
-
-        if iter_num % interval_iter == 0 and args.cls_par > 0:
+        if (iter_num % interval_iter == 0 and args.cls_par >= 0):
             netF.eval()
             netB.eval()
-            # netF_t.eval()
-            # netB_t.eval()
+            netC.eval()
             ################################ Done ###################################
             print('Starting to find Pseudo Labels! May take a while :)')
-            mem_label, dd,mean_all_output = obtain_label(dset_loaders['test'], netF, netB, netC, args) # test loader same as targe but has 3*batch_size compared to target and train
-            print('Completed finding Pseudo Labels')
+            mem_label, soft_output, dd, mean_all_output, actual_label,grad_norm = obtain_label(dset_loaders['test'], netF, netB, netC, args) # test loader same as targe but has 3*batch_size compared to target and train
+            if args.rlcc:
+                if iter_num == 0:
+                    prev_mem_label = mem_label
+                    if args.soft_pl:
+                        mem_label = dd
+                else:
+                    dict_pl = {'Actual Label':actual_label, 'Prev Pseudo Label': prev_mem_label, 'Curr Pseudo Labels': mem_label}
+                    mem_label = rlcc(prev_mem_label, mem_label, dd, args.class_num)
+                    if not args.soft_pl:
+                        # print('not soft')
+                        mem_label = mem_label.argmax(axis=1).astype(int)
+                        refined_label = mem_label
+                    else:	
+                        refined_label = mem_label.argmax(axis=1)
+                    dict_pl.update({'Refined Pseudo Labels':refined_label})
+                    prev_mem_label = refined_label
+                    # print(mem_label.dtype)
+                    # if iter_num % (interval_iter*10) == 0:
+                    #     print('Write to CSV')
+                    #     df = pd.DataFrame(dict_pl)
+                    #     df.to_csv('rlcc_cmp.csv'+str(args.t), mode = 'a')
+            print('Completed finding Pseudo Labels\n')
             mem_label = torch.from_numpy(mem_label).cuda()
             dd = torch.from_numpy(dd).cuda()
             mean_all_output = torch.from_numpy(mean_all_output).cuda()
 
             netF.train()
             netB.train()
+            netC.train()
 
         inputs_test_wk = inputs_test.cuda()
         inputs_test_stg = inputs_test_stg.cuda()
@@ -285,12 +338,37 @@ def train_target(args):
         features = netB(netF(inputs_test))
         outputs = netC(features)
 
+        if args.grad_norm==1 and args.cls_par > 0:
+            #print("running with bridge")
+            with torch.no_grad():
+                pred = mem_label[tar_idx]
+                # print(grad_norm["2"])
+                # print("tar index:",tar_idx)
+                batch_sample_weight = torch.tensor(grad_norm["2"])[tar_idx].cuda()
+                batch_sample_weight = 1.0/batch_sample_weight
+                # print("batch_sample_weight:",batch_sample_weight)
+                # exit(0)
+                #pred_soft = dd[tar_idx] # vikash
+            classifier_loss = nn.CrossEntropyLoss(reduction='none')(outputs[0:args.batch_size], pred)
+            classifier_loss  = torch.mean(classifier_loss*batch_sample_weight)
+            classifier_loss *= args.cls_par   
 
-        if args.cls_par > 0:
+        elif args.grad_norm==0 and args.cls_par > 0:
             with torch.no_grad():
                 pred = mem_label[tar_idx]
                 #pred_soft = dd[tar_idx] # vikash
-            classifier_loss = nn.CrossEntropyLoss()(outputs[0:args.batch_size], pred)
+            
+            # print(pred.dtype, outputs.dtype)
+            sig = 1/(1+np.exp(-(iter_num/max_iter))) 
+            if args.soft_pl:
+                # print("Soft Cross Entropy")
+                classifier_loss = SoftCrossEntropyLoss(outputs[0:args.batch_size], pred)
+                # classifier_loss2 = nn.CrossEntropyLoss()(outputs[0:args.batch_size], torch.argmax(pred, dim=1))
+                # classifier_loss = sig*classifier_loss2 + (1-sig)*classifier_loss1
+            else:
+                # print("Hard Cross Entropy")
+                classifier_loss = nn.CrossEntropyLoss()(outputs[0:args.batch_size], pred)
+
             classifier_loss *= args.cls_par
             # m = 0.9*np.sin(np.minimum(np.pi/2,np.pi*iter_num/max_iter))
             # classifier_loss *=m
@@ -301,17 +379,26 @@ def train_target(args):
             #     classifier_loss *= 0
         else:
             classifier_loss = torch.tensor(0.0).cuda()
+        
+        #wandb.log({'classifier loss':classifier_loss})
         #with torch.no_grad():
             #gt_w = distributed_sinkhorn(outputs_test).detach()
             #gt_s = distributed_sinkhorn(outputs_stg).detach()
             #print(gt_w,gt_s)
         # consistancy_loss = 0.5*(torch.mean(loss.soft_CE(nn.Softmax(dim=1)(outputs_stg),gt_w)) + torch.mean(loss.soft_CE(nn.Softmax(dim=1)(outputs_test),gt_s)))
         # classifier_loss += consistancy_loss
-        if args.ent:
-            # find number of psuedo sample per class for handling class imbalance for entropy maximization
+        if args.fbnm:
             softmax_out = nn.Softmax(dim=1)(outputs)
-            #softmax_outputs_stg = nn.Softmax(dim=1)(outputs_stg)
-            entropy_loss = torch.mean(loss.Entropy(softmax_out))
+            list_svd,_ = torch.sort(torch.sqrt(torch.sum(torch.pow(softmax_out,2),dim=0)), descending=True)
+            fbnm_loss = - torch.mean(list_svd[:min(softmax_out.shape[0],softmax_out.shape[1])])
+            fbnm_loss = args.fbnm_par*fbnm_loss
+            #classifier_loss += transfer_loss
+        else:
+            fbnm_loss = torch.tensor(0.0).cuda()
+        if args.ent:
+            
+            softmax_out = nn.Softmax(dim=1)(outputs)		# find number of psuedo sample per class for handling class imbalance for entropy maximization
+            entropy_loss = torch.mean(loss.Entropy(softmax_out))#softmax_outputs_stg = nn.Softmax(dim=1)(outputs_stg)
             #entropy_loss = torch.mean(loss.soft_CE(softmax_outputs_stg,gt_w))
             en_loss = entropy_loss.item()
             #entropy_loss = dist_loss(outputs_test, outputs_test,T=1.0)
@@ -330,9 +417,11 @@ def train_target(args):
             #im_loss = entropy_loss * m
             #wandb.log({"Im Loss":im_loss.item()})
             #wandb.log({'CE Loss': classifier_loss.item()})
-            classifier_loss += im_loss
-        args.consistancy = True
-        if args.consistancy:
+            #classifier_loss += im_loss
+        else:
+            im_loss = torch.tensor(0.0).cuda()
+        # args.consistancy = True
+        if args.consist:
             expectation_ratio = mean_all_output/torch.mean(softmax_out[0:args.batch_size],dim=0)
             #consistency_loss = 0.5*(dist_loss(outputs[args.batch_size:],outputs[0:args.batch_size]) + dist_loss(outputs[0:args.batch_size],outputs[args.batch_size:]))
             with torch.no_grad():
@@ -343,14 +432,17 @@ def train_target(args):
             #print("=====================::",consistency_loss)
             cs_loss = consistency_loss.item()
             #print("cls loss:{} en loss:{} gen loss:{} im_loss:{} consistancy_loss:{}".format(classifier_loss.item(), en_loss, gen_loss, im_loss.item(),cs_loss))
-            classifier_loss += consistency_loss
-        wandb.log({"cls loss":classifier_loss.item(), "en loss":en_loss, "gen loss":gen_loss, "im_loss":im_loss})
+            #classifier_loss += consistency_loss
+        else:
+            consistency_loss = torch.tensor(0.0).cuda()
+        #wandb.log({"Total loss":classifier_loss.item(), "en loss":en_loss, "gen loss":gen_loss, "im_loss":im_loss})
+        total_loss = classifier_loss + im_loss + fbnm_loss + consistency_loss
+        wandb.log({"total loss":total_loss.item(),"cls loss":classifier_loss.item(), "im_loss":im_loss.item(),"consistency loss":consistency_loss.item(), "fbnm loss":fbnm_loss.item()})
             
 
         #classifier_loss = L2(outputs_stg,outputs_test)
         optimizer.zero_grad()
-        classifier_loss.backward()
-        #wandb.log({'Adaptation: train_classifier_loss': classifier_loss.item()})
+        total_loss.backward()
         print(f'Task: {args.name}, Iter:{iter_num}/{max_iter} \t train_classifier_loss {classifier_loss.item()}')
         optimizer.step()
         # EMA update for the teacher
@@ -363,7 +455,10 @@ def train_target(args):
         if iter_num % interval_iter == 0 or iter_num == max_iter:
             netF.eval()
             netB.eval()
+            netC.eval()
             acc_eval_dn, _ = cal_acc(dset_loaders["eval_dn"], netF, netB, netC, False)
+            if acc_eval_dn > max_acc:
+                max_acc=acc_eval_dn
             wandb.log({"STDA_Test_Accuracy":acc_eval_dn})
 
             log_str = '\nTask: {}, Iter:{}/{}; Final Eval test = {:.2f}%'.format(args.name, iter_num, max_iter, acc_eval_dn)
@@ -384,12 +479,13 @@ def train_target(args):
 
             netF.train()
             netB.train()
+            netC.train()
 
     if args.issave:
         torch.save(netF.state_dict(), osp.join(args.output_dir, "target_F_" + args.savename + ".pt"))
         torch.save(netB.state_dict(), osp.join(args.output_dir, "target_B_" + args.savename + ".pt"))
         torch.save(netC.state_dict(), osp.join(args.output_dir, "target_C_" + args.savename + ".pt"))
-
+    print('Maximum Accuracy: ', max_acc)
     return netF, netB, netC
 
 def dist_loss(input, target, T=0.1):
@@ -430,6 +526,7 @@ def obtain_label(loader, netF, netB, netC, args):
                 all_label = torch.cat((all_label, labels.float()), 0)
     ##################### Done ##################################
     all_output = nn.Softmax(dim=1)(all_output)
+
     mean_all_output = torch.mean(all_output,dim=0).numpy()
     # print(all_output.shape)
     # ent = torch.sum(-all_output * torch.log(all_output + args.epsilon), dim=1)
@@ -444,18 +541,16 @@ def obtain_label(loader, netF, netB, netC, args):
     ### all_fea: extractor feature [bs,N]
     # print(all_fea.shape)
     all_fea = all_fea.float().cpu().numpy()
-    K = all_output.size(1)
+    K = all_output.size(1)                  # Number of classes
     aff = all_output.float().cpu().numpy()
     ### aff: softmax output [bs,c]
-    # print(aff.shape)
+
     initc = aff.transpose().dot(all_fea)
     initc = initc / (1e-8 + aff.sum(axis=0)[:, None]) # got the initial normalized centroid (k*(d+1))
-    # print(initc.shape)
     cls_count = np.eye(K)[predict].sum(axis=0) # total number of prediction per class
-    labelset = np.where(cls_count > args.threshold) ### index of classes for which same sampeled have been detected # returns tuple
+    labelset = np.where(cls_count >= args.threshold) ### index of classes for which same sampeled have been detected # returns tuple
     labelset = labelset[0] # index of classes for which samples per class greater than threshold
-    # print(labelset)
-
+    
     #dd = cdist(all_fea, initc[labelset], args.distance) # N*K
     #print(all_fea.shape, initc[labelset].shape)
     dd = all_fea@initc[labelset].T
@@ -479,13 +574,18 @@ def obtain_label(loader, netF, netB, netC, args):
         pred_label = labelset[pred_label]
 
     acc = np.sum(pred_label == all_label.float().numpy()) / len(all_fea)
+    wandb.log({"Pseudo_Label_Accuracy":acc*100})
     log_str = 'Accuracy = {:.2f}% -> {:.2f}%'.format(accuracy * 100, acc * 100)
 
     args.out_file.write(log_str + '\n')
     args.out_file.flush()
     print(log_str + '\n')
     #exit(0)
-    return pred_label.astype('int'), dd ,mean_all_output
+    dd = F.softmax(torch.from_numpy(dd), dim=1)
+    grad_norm = grad_embedding(all_fea, pred_label.astype('int'), netC)
+    grad_norm["pseudo_label"] = pred_label.astype('float')
+    grad_norm["actual_label"] = all_label.float().numpy()
+    return pred_label, all_output.cpu().numpy(), dd.numpy().astype('float32') ,mean_all_output, all_label.cpu().numpy().astype(np.uint8), grad_norm
 
 def distributed_sinkhorn(out,eps=0.1, niters=3,world_size=1):
     Q = torch.exp(out / eps).t() # Q is K-by-B for consistency with notations from our paper
@@ -517,10 +617,10 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Rand-Augment')
     parser.add_argument('--gpu_id', type=str, nargs='?', default='0', help="device id to run")
     parser.add_argument('--s', type=int, default=0, help="source")
-    # parser.add_argument('--t', type=int, default=1, help="target")
+    parser.add_argument('--t', type=int, default=1, help="target")
     parser.add_argument('--max_epoch', type=int, default=3, help="max iterations")
-    parser.add_argument('--interval', type=int, default=15)
-    parser.add_argument('--batch_size', type=int, default=64, help="batch_size")
+    parser.add_argument('--interval', type=int, default=20)
+    parser.add_argument('--batch_size', type=int, default=56, help="batch_size")
     parser.add_argument('--worker', type=int, default=4, help="number of workers")
     parser.add_argument('--dset', type=str, default='office-home',
                         choices=['visda-2017', 'office', 'office-home', 'office-caltech', 'pacs', 'domain_net'])
@@ -528,8 +628,8 @@ if __name__ == "__main__":
     parser.add_argument('--net', type=str, default='vit', help="alexnet, vgg16, resnet50, res101")
     parser.add_argument('--seed', type=int, default=2020, help="random seed")
 
-    parser.add_argument('--gent', type=bool, default=True)
-    parser.add_argument('--ent', type=bool, default=True)
+    parser.add_argument('--gent', type=int, default=0)
+    parser.add_argument('--ent', type=int, default=0)
     parser.add_argument('--kd', type=bool, default=False)
     parser.add_argument('--se', type=bool, default=False)
     parser.add_argument('--nl', type=bool, default=False)
@@ -551,10 +651,24 @@ if __name__ == "__main__":
     parser.add_argument('--output_src', type=str, default='san', help='Load SRC training wt path')
     parser.add_argument('--da', type=str, default='uda', choices=['uda', 'pda'])
     parser.add_argument('--issave', type=bool, default=True)
-    parser.add_argument('--wandb', type=int, default=0)
+    parser.add_argument('--wandb', type=int, default=1)
     parser.add_argument('--earlystop', type=int, default=0)
-    
+    parser.add_argument('--soft_pl', action='store_true')
+    parser.add_argument('--suffix', type=str, default='')
+    parser.add_argument('--consist', type=int, default=1)   
+    parser.add_argument('--rlcc', action='store_true')
+    parser.add_argument('--fbnm', type=int, default=1)
+    parser.add_argument('--fbnm_par', type=float, default=1.0)
+    parser.add_argument('--grad_norm', type=int, default=1)
     args = parser.parse_args()
+    # agrumnets for sweep
+    args.output = "delete"
+    args.output_src = "san"
+    args.s = 0
+    args.worker = 0
+    args.net = "deit_s"
+    args.max_epoch = 5
+
 
     if args.dset == 'office-home':
         names = ['Art', 'Clipart', 'Product', 'RealWorld']
@@ -575,7 +689,7 @@ if __name__ == "__main__":
         names = ['clipart', 'infograph', 'painting', 'quickdraw','sketch', 'real']
         args.class_num = 345
 
-    os.environ["CUDA_VISIBLE_DEVICES"] = args.gpu_id
+    #os.environ["CUDA_VISIBLE_DEVICES"] = args.gpu_id
     SEED = args.seed
     torch.manual_seed(SEED)
     torch.cuda.manual_seed(SEED)
@@ -600,10 +714,12 @@ if __name__ == "__main__":
 
         mode = 'online' if args.wandb else 'disabled'
         
-        import wandb
-        #wandb.init(project='EarlyStop_STDA_DomainNet', entity='vclab', name=f'{names[args.s]} to {names[args.t]}', reinit=True,mode=mode)
-        wandb.init(project='Dual Clustering', entity='vclab', name=f'{names[args.s]} to {names[args.t]} only cls_loss', reinit=True,mode=mode)
-
+        
+        if args.dset == 'office-home':
+            wandb.init(project='A2C_Sweep', entity='vclab', reinit=True,mode=mode, config=args)
+        if args.dset == 'office':
+            wandb.init(project='STDA_Office31', entity='vclab', name=f'{names[args.s]} to {names[args.t]} '+args.suffix, reinit=True,mode=mode)
+        config = wandb.config
         args.output_dir_src = osp.join(args.output_src, args.da, args.dset, names[args.s][0].upper())
         args.output_dir = osp.join(args.output, 'STDA', args.dset, names[args.s][0].upper() + names[args.t][0].upper())
         args.name = names[args.s][0].upper() + names[args.t][0].upper()
@@ -619,3 +735,4 @@ if __name__ == "__main__":
         args.out_file.write(print_args(args) + '\n')
         args.out_file.flush()
         train_target(args)
+        break

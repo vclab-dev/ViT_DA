@@ -292,6 +292,7 @@ def train_target(args):
                 #pred_soft = dd[tar_idx] # vikash
             classifier_loss = nn.CrossEntropyLoss()(outputs[0:args.batch_size], pred)
             classifier_loss *= args.cls_par
+            cls_loss = classifier_loss.item()
             # m = 0.9*np.sin(np.minimum(np.pi/2,np.pi*iter_num/max_iter))
             # classifier_loss *=m
             # if args.kd:
@@ -307,6 +308,24 @@ def train_target(args):
             #print(gt_w,gt_s)
         # consistancy_loss = 0.5*(torch.mean(loss.soft_CE(nn.Softmax(dim=1)(outputs_stg),gt_w)) + torch.mean(loss.soft_CE(nn.Softmax(dim=1)(outputs_test),gt_s)))
         # classifier_loss += consistancy_loss
+        if args.lda and iter_num > int(0.1*max_iter):
+            softmax_out = nn.Softmax(dim=1)(outputs)
+            mu = torch.mean(softmax_out, dim=0)
+            std = torch.std(softmax_out,dim=0)
+            inter_class_mean_diff = []
+            for i in range(len(mu)-1):
+                for j in range(i+1, len(mu)):
+                    mu_diff = (mu[i] - mu[j])**2
+                    inter_class_mean_diff.append(mu_diff)
+            normalized_mean_diff = torch.mean(torch.tensor(inter_class_mean_diff))
+            normalized_std = torch.mean(std)
+            smoothing_param = 1e-4
+            lda_loss = normalized_std/(normalized_mean_diff + smoothing_param)
+            #lda_loss  = normalized_std - normalized_mean_diff
+            #lda_loss = torch.exp(lda_loss)
+            classifier_loss += -1e-3*lda_loss
+        else:
+            lda_loss = torch.tensor(0.0)
         if args.ent:
             # find number of psuedo sample per class for handling class imbalance for entropy maximization
             softmax_out = nn.Softmax(dim=1)(outputs)
@@ -331,7 +350,6 @@ def train_target(args):
             #wandb.log({"Im Loss":im_loss.item()})
             #wandb.log({'CE Loss': classifier_loss.item()})
             classifier_loss += im_loss
-        args.consistancy = True
         if args.consistancy:
             expectation_ratio = mean_all_output/torch.mean(softmax_out[0:args.batch_size],dim=0)
             #consistency_loss = 0.5*(dist_loss(outputs[args.batch_size:],outputs[0:args.batch_size]) + dist_loss(outputs[0:args.batch_size],outputs[args.batch_size:]))
@@ -344,9 +362,9 @@ def train_target(args):
             cs_loss = consistency_loss.item()
             #print("cls loss:{} en loss:{} gen loss:{} im_loss:{} consistancy_loss:{}".format(classifier_loss.item(), en_loss, gen_loss, im_loss.item(),cs_loss))
             classifier_loss += consistency_loss
-        wandb.log({"cls loss":classifier_loss.item(), "en loss":en_loss, "gen loss":gen_loss, "im_loss":im_loss})
-            
-
+        wandb.log({"Total Loss":classifier_loss.item(),"cls loss":cls_loss, "en loss":en_loss, "gen loss":gen_loss, "im_loss":im_loss.item(), "lda_loss":1e-3*lda_loss.item()}) 
+        # loss_var = {"Total Loss":classifier_loss.item(), "cls loss":cls_loss, "en loss":en_loss, "gen loss":gen_loss, "im_loss":im_loss, "lda_loss":lda_loss.item()}
+        # print(loss_var)
         #classifier_loss = L2(outputs_stg,outputs_test)
         optimizer.zero_grad()
         classifier_loss.backward()
@@ -553,7 +571,8 @@ if __name__ == "__main__":
     parser.add_argument('--issave', type=bool, default=True)
     parser.add_argument('--wandb', type=int, default=0)
     parser.add_argument('--earlystop', type=int, default=0)
-    
+    parser.add_argument('--lda', type=bool,default=False)
+    parser.add_argument('--consistancy',type=bool, default=True)
     args = parser.parse_args()
 
     if args.dset == 'office-home':
@@ -601,8 +620,7 @@ if __name__ == "__main__":
         mode = 'online' if args.wandb else 'disabled'
         
         import wandb
-        #wandb.init(project='EarlyStop_STDA_DomainNet', entity='vclab', name=f'{names[args.s]} to {names[args.t]}', reinit=True,mode=mode)
-        wandb.init(project='Dual Clustering', entity='vclab', name=f'{names[args.s]} to {names[args.t]} only cls_loss', reinit=True,mode=mode)
+        wandb.init(project='Dual Clustering', entity='vclab', name=f'{names[args.s]} to {names[args.t]} with all loss + LDA loss', reinit=True,mode=mode)
 
         args.output_dir_src = osp.join(args.output_src, args.da, args.dset, names[args.s][0].upper())
         args.output_dir = osp.join(args.output, 'STDA', args.dset, names[args.s][0].upper() + names[args.t][0].upper())

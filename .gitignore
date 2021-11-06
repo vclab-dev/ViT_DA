@@ -13,3 +13,4 @@ BMVC_SFMTDA
 original_checkpoint
 *.pt
 log*
+checkpoint/

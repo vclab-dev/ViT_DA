@@ -10,8 +10,8 @@ from tqdm import tqdm
 
 torch.manual_seed(0)
 
-def test_model(model_list, dataloader, args, dataset_name=None):
-    print('Started testing on ', len(dataloader)*args.batch_size, ' images')
+def test_model(model_list, dataloader,dsets, dataset_name=None):
+    print('Started testing on ', len(dsets), ' images')
     netF = model_list[0]
     netB = model_list[1]
     netC = model_list[2]
@@ -45,7 +45,7 @@ def data_load(batch_size=64,txt_path='domain_net_data'):
         normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
                                         std=[0.229, 0.224, 0.225])
         return transforms.Compose([
-            transforms.Resize((resize_size, resize_size)),
+            transforms.Resize((crop_size, crop_size)),
             transforms.ToTensor(),
             normalize
         ])
@@ -54,13 +54,19 @@ def data_load(batch_size=64,txt_path='domain_net_data'):
     dset_loaders = {}
     train_bs = batch_size
     
-    
-    txt_files = {'clipart': f'{txt_path}/clipart_test.txt',
-                'infograph': f'{txt_path}/infograph_test.txt', 
-                'painting':  f'{txt_path}/painting_test.txt', 
-                'quickdraw': f'{txt_path}/quickdraw_test.txt', 
-                'sketch':    f'{txt_path}/sketch_test.txt', 
-                'real':      f'{txt_path}/real_test.txt'}
+    if args.dset == 'office-home':
+        txt_files = {'art' : f'{txt_path}/Art.txt', 
+                'clipart': f'{txt_path}/Clipart.txt', 
+                'product': f'{txt_path}/Product.txt',
+                'realworld': f'{txt_path}/RealWorld.txt'}
+
+    if args.dset == 'domain-net':
+        txt_files = {'clipart': f'{txt_path}/clipart_test.txt',
+                    'infograph': f'{txt_path}/infograph_test.txt', 
+                    'painting':  f'{txt_path}/painting_test.txt', 
+                    'quickdraw': f'{txt_path}/quickdraw_test.txt', 
+                    'sketch':    f'{txt_path}/sketch_test.txt', 
+                    'real':      f'{txt_path}/real_test.txt'}
 
     for domain, paths in txt_files.items(): 
         txt_tar = open(paths).readlines()
@@ -68,7 +74,7 @@ def data_load(batch_size=64,txt_path='domain_net_data'):
         dsets[domain] = ImageList_idx(txt_tar, transform=image_train())
         dset_loaders[domain] = DataLoader(dsets[domain], batch_size=train_bs, shuffle=True,drop_last=False)
 
-    return dset_loaders
+    return dset_loaders, dsets
 
 def multi_domain_avg_acc(student, test_on=None):
 
@@ -88,7 +94,7 @@ def multi_domain_avg_acc(student, test_on=None):
 
         for sample in test_on:
             print(f'Testing Acc on {sample}')
-            test_acc,corr,tot = test_model(student, dom_dataloaders[sample], args, dataset_name=sample)
+            test_acc,corr,tot = test_model(student, dom_dataloaders[sample], dsets[sample], dataset_name=sample)
             accuracies.append(test_acc)
             correct.append(corr)
             total.append(tot)
@@ -105,11 +111,11 @@ def multi_domain_avg_acc(student, test_on=None):
 
 if __name__ == '__main__':
 
-    modelpathF = 'optimised_rn101_MTDA_wt/KT_MTDA/domain_net/painting_to_others/target_F_painting_rn101.pt'
-    modelpathB = 'optimised_rn101_MTDA_wt/KT_MTDA/domain_net/painting_to_others/target_B_painting_rn101.pt'
-    modelpathC = 'optimised_rn101_MTDA_wt/KT_MTDA/domain_net/painting_to_others/target_C_painting_rn101.pt'
+    # modelpathF = 'optimised_rn101_MTDA_wt/KT_MTDA/domain_net/painting_to_others/target_F_painting_rn101.pt'
+    # modelpathB = 'optimised_rn101_MTDA_wt/KT_MTDA/domain_net/painting_to_others/target_B_painting_rn101.pt'
+    # modelpathC = 'optimised_rn101_MTDA_wt/KT_MTDA/domain_net/painting_to_others/target_C_painting_rn101.pt'
     # test_dataset = 'clipart'
-    test_dataset = ['infograph', 'clipart', 'quickdraw', 'real', 'sketch']
+    test_dataset = ['clipart', 'product', 'realworld']
     
 
     # training parameters
@@ -117,27 +123,35 @@ if __name__ == '__main__':
     parser.add_argument('-b', '--batch_size', default=256, type=int,help='mini-batch size (default: 32)')
     parser.add_argument('-a', '--arch', default='rn50', type=str,help='Select model type vit or rn50 based')
     parser.add_argument('-t', '--txt_path', default='data/domain_net', type=str,help='Path to all txt files')
+    parser.add_argument('-d', '--dset', default='domain-net', type=str,help='Dataset')
     parser.add_argument('-n', '--bottleneck_dim', default=1024, type=str,help='Select Bottleneck dim')
     
     args = parser.parse_args()
     
-    if args.arch == 'rn50':
-        netF = network.ResBase(res_name='resnet50').cuda()
+    # if args.arch == 'rn50':
+    #     netF = network.ResBase(res_name='resnet50').cuda()
     
-    if args.arch == 'rn101':
-        netF = network.ResBase(res_name='resnet101').cuda()
+    # if args.arch == 'rn101':
+    #     netF = network.ResBase(res_name='resnet101').cuda()
         
-    if args.arch == 'vit':
+    # if args.arch == 'vit':
 
-        netF = network.ViT().cuda()
+    #     netF = network.ViT().cuda()
 
-    netB = network.feat_bootleneck(type='bn', feature_dim=netF.in_features,bottleneck_dim=args.bottleneck_dim).cuda()
-    netC = network.feat_classifier(type='wn', class_num=345, bottleneck_dim=args.bottleneck_dim).cuda()
+    # netB = network.feat_bootleneck(type='bn', feature_dim=netF.in_features,bottleneck_dim=args.bottleneck_dim).cuda()
+    # netC = network.feat_classifier(type='wn', class_num=345, bottleneck_dim=args.bottleneck_dim).cuda()
 
-    netF.load_state_dict(torch.load(modelpathF))
-    netB.load_state_dict(torch.load(modelpathB))
-    netC.load_state_dict(torch.load(modelpathC))
+    # netF.load_state_dict(torch.load(modelpathF))
+    # netB.load_state_dict(torch.load(modelpathB))
+    # netC.load_state_dict(torch.load(modelpathC))
     
+    modelpath = './checkpoint/ckpt.t70_0'
+    model = torch.load(modelpath)
+
+    netF = model['netF']
+    netB = model['netB']
+    netC = model['netC']
+
     print('Models Loaded Successfully')
     netF.eval()
     netB.eval()
@@ -145,7 +159,7 @@ if __name__ == '__main__':
 
     model_list = [netF,netB, netC]
 
-    dom_dataloaders = data_load(batch_size=args.batch_size,txt_path=args.txt_path) 
+    dom_dataloaders, dsets = data_load(batch_size=args.batch_size,txt_path=args.txt_path) 
 
     if type(test_dataset) == list:
         print(f'Started testing on {test_dataset}')
@@ -153,7 +167,7 @@ if __name__ == '__main__':
     
     if type(test_dataset) == str:
         print(f'Started testing on {test_dataset}')
-        accuracy, correct, total = test_model(model_list, dom_dataloaders[test_dataset],args, dataset_name=test_dataset)
+        accuracy, correct, total = test_model(model_list, dom_dataloaders[test_dataset],dsets[test_dataset], dataset_name=test_dataset)
     
     ## For testing on multiple Domains
     # avg_acc = multi_domain_avg_acc(model_list, test_on=['infograph', 'clipart', 'quickdraw', 'painting', 'real'])

@@ -1,6 +1,7 @@
 import argparse
 import os, sys
 import os.path as osp
+from torch.nn.functional import threshold
 #from typing_extensions import Required
 import torchvision
 import numpy as np
@@ -312,6 +313,14 @@ def train_target(args):
             #     classifier_loss *= 0
         else:
             classifier_loss = torch.tensor(0.0).cuda()
+        if args.fbnm:
+            softmax_out = nn.Softmax(dim=1)(outputs)
+            list_svd,_ = torch.sort(torch.sqrt(torch.sum(torch.pow(softmax_out,2),dim=0)), descending=True)
+            fbnm_loss = - torch.mean(list_svd[:min(softmax_out.shape[0],softmax_out.shape[1])])
+            fbnm_loss = args.fbnm_par*fbnm_loss
+            #classifier_loss += fbnm_loss
+        else:
+            fbnm_loss = torch.tensor(0.0).cuda()
         #with torch.no_grad():
             #gt_w = distributed_sinkhorn(outputs_test).detach()
             #gt_s = distributed_sinkhorn(outputs_stg).detach()
@@ -341,9 +350,11 @@ def train_target(args):
             #im_loss = entropy_loss * m
             #wandb.log({"Im Loss":im_loss.item()})
             #wandb.log({'CE Loss': classifier_loss.item()})
-            classifier_loss += im_loss
-        args.consistancy = True
-        if args.consistancy:
+            #classifier_loss += im_loss
+        else:
+            im_loss= torch.tensor(0.0).cuda()
+        #args.consist = False
+        if args.consist:
             expectation_ratio = mean_all_output/torch.mean(softmax_out[0:args.batch_size],dim=0)
             #consistency_loss = 0.5*(dist_loss(outputs[args.batch_size:],outputs[0:args.batch_size]) + dist_loss(outputs[0:args.batch_size],outputs[args.batch_size:]))
             with torch.no_grad():
@@ -352,10 +363,14 @@ def train_target(args):
                 #print(soft_label.shape)
             consistency_loss = args.const_par*torch.mean(loss.soft_CE(softmax_out[args.batch_size:],soft_label))
             #print("=====================::",consistency_loss)
-            cs_loss = consistency_loss.item()
+            #cs_loss = consistency_loss.item()
             #print("cls loss:{} en loss:{} gen loss:{} im_loss:{} consistancy_loss:{}".format(classifier_loss.item(), en_loss, gen_loss, im_loss.item(),cs_loss))
-            classifier_loss += consistency_loss
-        wandb.log({"cls loss":classifier_loss.item(), "en loss":en_loss, "gen loss":gen_loss, "im_loss":im_loss})
+            #classifier_loss += consistency_loss
+        else:
+            consistency_loss = torch.tensor(0.0).cuda()
+        total_loss = classifier_loss + im_loss + fbnm_loss + consistency_loss
+        wandb.log({"total loss":total_loss.item(),"cls loss":classifier_loss.item(), "im_loss":im_loss.item(),"consistency loss":consistency_loss.item(), "fbnm loss":fbnm_loss.item()})
+        #wandb.log({"cls loss":classifier_loss.item(), "en loss":en_loss, "gen loss":gen_loss, "im_loss":im_loss})
             
 
         #classifier_loss = L2(outputs_stg,outputs_test)
@@ -451,6 +466,21 @@ def kmeans(X):
     print('Estimated number of clusters: %d' % n_clusters_)
     # exit(0)
     return labels
+def get_embedding_threshold(arr):
+    """
+    Given an 1-d array cluster it into two group and choose threshold which separates these two clusters
+    """
+    arr.sort()
+    min_sum = 10000000.0
+    threshold = 0.0
+    for i in range(1, len(arr)-1):
+        temp_min_sum = abs(arr[0] - arr[i]) + abs(arr[i+1] - arr[-1])
+        if temp_min_sum < min_sum:
+            min_sum = temp_min_sum
+            threshold = (arr[i] + arr[i+1])/2
+    return threshold
+
+
 def grad_embedding(feat, pseudo_gt, netC):
     """
     calculate gradient embedding for netC layer for each sample
@@ -459,7 +489,7 @@ def grad_embedding(feat, pseudo_gt, netC):
         p.requires_grad = True
     feat = torch.from_numpy(feat)[:,0:-1].cuda()
     output = netC(feat)
-    print("Model:",netC)
+    #print("Model:",netC)
     total_grad = {"0":[], "1":[],"2":[]} # 2 corresponds grad_norm w.r.t to total parameter and 0 or 1 id for bias, nor sure about which one
     for i in range(len(pseudo_gt)):
         p_hat, p = torch.unsqueeze(output[i],0), torch.tensor([pseudo_gt[i]]).view(-1).cuda()
@@ -489,13 +519,12 @@ def grad_embedding(feat, pseudo_gt, netC):
         # #     sample_gard = grad_norm - total_grad[-1]
         #print("grad Norm=: for instance {} is =:{}".format(i,np.array([np.linalg.norm(i) for i in grads])))
         # if (i+1)%5==0:
-        #     exit(0)  
+        #     exit(0)
+        threshold = get_embedding_threshold(total_grad["2"])
+        total_grad["threshold"] = threshold
+        #print(threshold)
     return total_grad
-
-
-
-    
-    return 
+ 
 def obtain_label(loader, netF, netB, netC, args):
     # print(dir(netC))
     # print(netC.get_embedding_dim())
@@ -590,7 +619,7 @@ def obtain_label(loader, netF, netB, netC, args):
     grad_norm["pseudo_label"] = pred_label.astype('float')
     grad_norm["actual_label"] = all_label.float().numpy()
     df = pd.DataFrame.from_dict(grad_norm)
-    df.to_csv("grad_norm.csv",index=False)
+    df.to_csv("grad_norm_with_thresold.csv",index=False)
     #exit(0)
     return pred_label.astype('int'), dd ,mean_all_output,grad_norm
 
@@ -635,11 +664,12 @@ if __name__ == "__main__":
     parser.add_argument('--net', type=str, default='vit', help="alexnet, vgg16, resnet50, res101")
     parser.add_argument('--seed', type=int, default=2020, help="random seed")
 
-    parser.add_argument('--gent', type=bool, default=True)
-    parser.add_argument('--ent', type=bool, default=True)
-    parser.add_argument('--kd', type=bool, default=False)
+    parser.add_argument('--gent', type=int, default=0)
+    parser.add_argument('--ent', type=int, default=0)
+    parser.add_argument('--kd', type=int, default=0)
     parser.add_argument('--se', type=bool, default=False)
     parser.add_argument('--nl', type=bool, default=False)
+    parser.add_argument('--fbnm',type=int, default=1)
 
     parser.add_argument('--threshold', type=int, default=0)
     parser.add_argument('--cls_par', type=float, default=0.2)
@@ -660,6 +690,8 @@ if __name__ == "__main__":
     parser.add_argument('--issave', type=bool, default=True)
     parser.add_argument('--wandb', type=int, default=0)
     parser.add_argument('--earlystop', type=int, default=0)
+    parser.add_argument('--fbnm_par', type=float, default=1.0)
+    parser.add_argument('--consist',type=int, default=0)
     
     args = parser.parse_args()
 
@@ -708,7 +740,7 @@ if __name__ == "__main__":
         mode = 'online' if args.wandb else 'disabled'
         
         import wandb
-        wandb.init(project='Dual Clustering', entity='vclab', name=f'{names[args.s]} to {names[args.t]} with Bridge weight', reinit=True,mode=mode)
+        wandb.init(project='Dual Clustering', entity='vclab', name=f'{names[args.s]} to {names[args.t]} with Bridge weight+FBNM+consist', reinit=True,mode=mode)
 
         args.output_dir_src = osp.join(args.output_src, args.da, args.dset, names[args.s][0].upper())
         args.output_dir = osp.join(args.output, 'STDA', args.dset, names[args.s][0].upper() + names[args.t][0].upper())

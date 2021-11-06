@@ -330,8 +330,21 @@ def train_target(args):
             #im_loss = entropy_loss * m
             #wandb.log({"Im Loss":im_loss.item()})
             #wandb.log({'CE Loss': classifier_loss.item()})
-            classifier_loss += im_loss
-        args.consistancy = True
+            #classifier_loss += im_loss
+        else:
+            im_loss = torch.tensor(0.0).cuda()
+
+        if args.fbnm:
+            softmax_out = nn.Softmax(dim=1)(outputs)
+            list_svd,_ = torch.sort(torch.sqrt(torch.sum(torch.pow(softmax_out,2),dim=0)), descending=True)
+            fbnm_loss = - torch.mean(list_svd[:min(softmax_out.shape[0],softmax_out.shape[1])])
+            fbnm_loss = args.fbnm_par*fbnm_loss
+            #classifier_loss += transfer_loss
+        else:
+            fbnm_loss = torch.tensor(0.0).cuda()
+
+
+        #args.consistancy = False
         if args.consistancy:
             expectation_ratio = mean_all_output/torch.mean(softmax_out[0:args.batch_size],dim=0)
             #consistency_loss = 0.5*(dist_loss(outputs[args.batch_size:],outputs[0:args.batch_size]) + dist_loss(outputs[0:args.batch_size],outputs[args.batch_size:]))
@@ -343,9 +356,12 @@ def train_target(args):
             #print("=====================::",consistency_loss)
             cs_loss = consistency_loss.item()
             #print("cls loss:{} en loss:{} gen loss:{} im_loss:{} consistancy_loss:{}".format(classifier_loss.item(), en_loss, gen_loss, im_loss.item(),cs_loss))
-            classifier_loss += consistency_loss
-        wandb.log({"cls loss":classifier_loss.item(), "en loss":en_loss, "gen loss":gen_loss, "im_loss":im_loss})
-            
+            #classifier_loss += consistency_loss
+        else:
+            consistency_loss = torch.tensor(0.0).cuda()
+        total_loss = classifier_loss + im_loss + fbnm_loss + consistency_loss
+        wandb.log({"total loss":total_loss.item(),"cls loss":classifier_loss.item(), "im_loss":im_loss.item(),"consistency loss":consistency_loss.item(), "fbnm loss":fbnm_loss.item()})
+        #print({"total loss":total_loss,"cls loss":classifier_loss.item(), "im_loss":im_loss,"consistency loss":consistency_loss.item(), "fbnm loss":fbnm_loss.item()})  
 
         #classifier_loss = L2(outputs_stg,outputs_test)
         optimizer.zero_grad()
@@ -480,7 +496,7 @@ def obtain_label(loader, netF, netB, netC, args):
 
     acc = np.sum(pred_label == all_label.float().numpy()) / len(all_fea)
     log_str = 'Accuracy = {:.2f}% -> {:.2f}%'.format(accuracy * 100, acc * 100)
-
+    wandb.log({"Model Accuracy": accuracy*100, "Pseudo label Acc": acc * 100})
     args.out_file.write(log_str + '\n')
     args.out_file.flush()
     print(log_str + '\n')
@@ -528,9 +544,10 @@ if __name__ == "__main__":
     parser.add_argument('--net', type=str, default='vit', help="alexnet, vgg16, resnet50, res101")
     parser.add_argument('--seed', type=int, default=2020, help="random seed")
 
-    parser.add_argument('--gent', type=bool, default=True)
-    parser.add_argument('--ent', type=bool, default=True)
-    parser.add_argument('--kd', type=bool, default=False)
+    parser.add_argument('--gent', type=int, default=0)
+    parser.add_argument('--ent', type=int, default=0)
+    parser.add_argument('--kd', type=int, default=0)
+    parser.add_argument('--consistancy', type=int, default=0)
     parser.add_argument('--se', type=bool, default=False)
     parser.add_argument('--nl', type=bool, default=False)
 
@@ -538,6 +555,7 @@ if __name__ == "__main__":
     parser.add_argument('--cls_par', type=float, default=0.2)
     parser.add_argument('--const_par', type=float, default=0.2)
     parser.add_argument('--ent_par', type=float, default=1.3)
+    parser.add_argument('--fbnm_par', type=float, default=1.0)
 
     parser.add_argument('--lr_decay1', type=float, default=0.1)
     parser.add_argument('--lr_decay2', type=float, default=1.0)
@@ -553,6 +571,7 @@ if __name__ == "__main__":
     parser.add_argument('--issave', type=bool, default=True)
     parser.add_argument('--wandb', type=int, default=0)
     parser.add_argument('--earlystop', type=int, default=0)
+    parser.add_argument('--fbnm', type=int, default=0)
     
     args = parser.parse_args()
 
@@ -602,7 +621,7 @@ if __name__ == "__main__":
         
         import wandb
         #wandb.init(project='EarlyStop_STDA_DomainNet', entity='vclab', name=f'{names[args.s]} to {names[args.t]}', reinit=True,mode=mode)
-        wandb.init(project='Dual Clustering', entity='vclab', name=f'{names[args.s]} to {names[args.t]} only cls_loss', reinit=True,mode=mode)
+        wandb.init(project='Dual Clustering', entity='vclab', name=f'{names[args.s]} to {names[args.t]}  {args.cls_par}*cls_loss + {args.fbnm_par}*bnm loss:{args.fbnm} + {args.ent_par}*IM loss:{args.ent} + {args.const_par}*const loss:{args.consistancy}', reinit=True,mode=mode)
 
         args.output_dir_src = osp.join(args.output_src, args.da, args.dset, names[args.s][0].upper())
         args.output_dir = osp.join(args.output, 'STDA', args.dset, names[args.s][0].upper() + names[args.t][0].upper())

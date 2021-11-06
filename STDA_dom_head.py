@@ -1,6 +1,7 @@
 import argparse
 import os, sys
 import os.path as osp
+from torch._C import device
 import torchvision
 import numpy as np
 import torch
@@ -9,12 +10,12 @@ import torch.optim as optim
 from torchvision import transforms
 import network, loss
 from torch.utils.data import DataLoader
-from data_list import ImageList, ImageList_idx
+from data_list import ImageList, ImageList_idx, ImageList_Domain
 import random, pdb, math, copy
 from tqdm import tqdm
 from scipy.spatial.distance import cdist
 from sklearn.metrics import confusion_matrix
-from loss import KnowledgeDistillationLoss
+from loss import HLoss
 from timm.data.auto_augment import rand_augment_transform # timm for randaugment
 
 
@@ -22,7 +23,6 @@ def op_copy(optimizer):
     for param_group in optimizer.param_groups:
         param_group['lr0'] = param_group['lr']
     return optimizer
-
 
 def lr_scheduler(optimizer, iter_num, max_iter, gamma=10, power=0.75):
     decay = (1 + gamma * iter_num / max_iter) ** (-power)
@@ -32,7 +32,6 @@ def lr_scheduler(optimizer, iter_num, max_iter, gamma=10, power=0.75):
         param_group['momentum'] = 0.9
         param_group['nesterov'] = True
     return optimizer
-
 
 def image_train(resize_size=256, crop_size=224, alexnet=False):
     if not alexnet:
@@ -48,8 +47,6 @@ def image_train(resize_size=256, crop_size=224, alexnet=False):
         normalize
     ])
 
-
-#tfm = rand_augment_transform(config_str='rand-m9-mstd0.5')
 def strong_augment(resize_size=256, crop_size=224, alexnet=False):
     if not alexnet:
         normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
@@ -64,9 +61,6 @@ def strong_augment(resize_size=256, crop_size=224, alexnet=False):
         normalize
     ])
 
-
-
-
 def image_test(resize_size=256, crop_size=224, alexnet=False):
     if not alexnet:
         normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
@@ -80,6 +74,91 @@ def image_test(resize_size=256, crop_size=224, alexnet=False):
         normalize
     ])
 
+def target_data_load(args, batch_size=64,txt_path='data/office-home', dset=None, transform=None):
+    ## prepare data
+
+    def image(resize_size=256, crop_size=224, alexnet=False):
+        normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
+                                        std=[0.229, 0.224, 0.225])
+        return transforms.Compose([
+            transforms.Resize((resize_size, resize_size)),
+            transforms.RandomCrop(crop_size),
+            transforms.RandomHorizontalFlip(),
+            transforms.ToTensor(),
+            normalize
+        ])
+
+    def image_test(resize_size=256, crop_size=224, alexnet=False):
+        normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
+                                        std=[0.229, 0.224, 0.225])
+        return transforms.Compose([
+            transforms.Resize((resize_size, resize_size)),
+            transforms.ToTensor(),
+            normalize
+        ])
+    if transform == None:
+        transform = image_test(resize_size=224)
+
+    dsets = {}
+    dset_loaders = {}
+    dset_loaders_test = {}
+
+    train_bs = batch_size
+    
+    if args.dset == 'office':
+        txt_files = {'amazon' : f'{txt_path}/amazon.txt', 
+                    'webcam': f'{txt_path}/webcam.txt', 
+                    'dslr': f'{txt_path}/dslr.txt'}
+    if args.dset == 'office-home':
+        txt_files = {'Art' : f'{txt_path}/Art.txt', 
+                'Clipart': f'{txt_path}/Clipart.txt', 
+                'Product': f'{txt_path}/Product.txt',
+                'RealWorld': f'{txt_path}/RealWorld.txt'}
+
+    if args.dset == 'pacs':
+        txt_files = {'art_painting' : f'{txt_path}/art_painting.txt', 
+                'cartoon': f'{txt_path}/cartoon.txt', 
+                'photo': f'{txt_path}/photo.txt',
+                'sketch': f'{txt_path}/sketch.txt'}
+    
+    if args.dset == 'domain_net':
+        txt_files = {'clipart': f'{txt_path}/clipart.txt',
+                'infograph': f'{txt_path}/infograph.txt', 
+                'painting':  f'{txt_path}/painting.txt', 
+                'quickdraw': f'{txt_path}/quickdraw.txt', 
+                'sketch':    f'{txt_path}/sketch.txt', 
+                'real':      f'{txt_path}/real.txt'}
+
+        txt_files_test = {'clipart': f'{txt_path}/clipart_test.txt',
+                'infograph': f'{txt_path}/infograph_test.txt', 
+                'painting':  f'{txt_path}/painting_test.txt', 
+                'quickdraw': f'{txt_path}/quickdraw_test.txt', 
+                'sketch':    f'{txt_path}/sketch_test.txt', 
+                'real':      f'{txt_path}/real_test.txt'}
+
+        for domain, paths in txt_files_test.items(): 
+            txt_tar = open(paths).readlines()
+            dsets[domain] = ImageList_idx(txt_tar, transform=image_test())
+            dset_loaders_test[domain] = DataLoader(dsets[domain], batch_size=train_bs,drop_last=False)
+
+    if args.dset != 'domain_net':
+        dset_loaders_test = dset_loaders
+    
+    dataset_list = []
+
+    for count , (domain, paths) in enumerate(txt_files.items()): 
+        if count == args.s:
+            continue
+
+        txt_tar = open(paths).readlines()
+
+        dsets[domain] = ImageList_Domain(txt_tar, count, transform=transform)
+        dataset_list.append(dsets[domain])
+        dset_loaders[domain] = DataLoader(dsets[domain], batch_size=train_bs, shuffle=True,drop_last=True)
+
+    concat_dset = torch.utils.data.ConcatDataset(dataset_list)
+
+    return concat_dset,dsets
 
 def data_load(args):
     ## prepare data
@@ -90,13 +169,14 @@ def data_load(args):
     txt_test = open(args.test_dset_path).readlines()
     txt_eval_dn = open(args.txt_eval_dn).readlines()
 
-    dsets["target"] = ImageList_idx(txt_tar, transform=image_train())
+    dsets["target"] = target_data_load(args, transform=image_test())
     dset_loaders["target"] = DataLoader(dsets["target"], batch_size=train_bs, shuffle=True, num_workers=args.worker,
                                          drop_last=True)
-    dsets["test"] = ImageList_idx(txt_test, transform=image_test())
+    dsets["test"] = target_data_load(args, transform=image_test())
     dset_loaders["test"] = DataLoader(dsets["test"], batch_size=train_bs * 3, shuffle=False, num_workers=args.worker,
                                       drop_last=False)
-    dsets["strong_aug"] = ImageList_idx(txt_test, transform=strong_augment())
+
+    dsets["strong_aug"] = target_data_load(args, transform=strong_augment()) 
     dset_loaders["strong_aug"] = DataLoader(dsets["strong_aug"], batch_size=train_bs * 3, shuffle=False, num_workers=args.worker,
                                        drop_last=False)
     if args.dset =='domain_net':
@@ -149,7 +229,6 @@ def get_pseudo_gt(data_batch, netB, netF,netC):
     netF.train()
     return outputs_test
 
-
 def get_strong_aug(dataset, idx):
     aug_img = torch.cat([dataset[i][0].unsqueeze(dim=0) for i in idx],dim=0)
     return aug_img
@@ -172,6 +251,8 @@ def train_target(args):
     netB = network.feat_bootleneck(type=args.classifier, feature_dim=netF.in_features,
                                    bottleneck_dim=args.bottleneck).cuda()
     netC = network.feat_classifier(type=args.layer, class_num=args.class_num, bottleneck_dim=args.bottleneck).cuda()
+    
+    netD = network.feat_classifier(type=args.layer, class_num=3, bottleneck_dim=args.bottleneck).cuda()
 
     #print(netF.state_dict().keys())
     
@@ -184,27 +265,12 @@ def train_target(args):
     modelpath = args.output_dir_src + '/source_C.pt'
     netC.load_state_dict(torch.load(modelpath))
     netC.eval()
+
+
     print('Model Loaded')
+
     for k, v in netC.named_parameters():
         v.requires_grad = False
-    ### add teacher module
-    # if args.net[0:3] == 'res':
-    #     netF_t = network.ResBase(res_name=args.net, se=args.se, nl=args.nl).cuda()
-    # elif args.net[0:3] == 'vgg':
-    #     netF_t = network.VGGBase(vgg_name=args.net).cuda()
-    # elif args.net == 'vit':
-    #     netF_t = network.ViT().cuda()
-    # netB_t = network.feat_bootleneck(type=args.classifier, feature_dim=netF.in_features,
-    #                                bottleneck_dim=args.bottleneck).cuda()
-    # ### initial from student
-    # netF_t.load_state_dict(netF.state_dict())
-    # netB_t.load_state_dict(netB.state_dict())
-
-    # ### remove grad
-    # for k, v in netF_t.named_parameters():
-    #     v.requires_grad = False
-    # for k, v in netB_t.named_parameters():
-    #     v.requires_grad = False
 
     param_group = []
     param_group_cls = []
@@ -223,6 +289,12 @@ def train_target(args):
             param_group_cls += [{'params': v, 'lr': args.lr * args.lr_decay2}]
         else:
             v.requires_grad = False
+    
+    for k, v in netD.named_parameters():
+        if args.lr_decay2 > 0:
+            param_group_cls += [{'params': v, 'lr': args.lr * args.lr_decay2}]
+        else:
+            v.requires_grad = False
 
     optimizer = optim.SGD(param_group)
     optimizer = op_copy(optimizer)
@@ -236,10 +308,11 @@ def train_target(args):
     print('Training Started')
     while iter_num < max_iter:
         try:
-            inputs_test, _, tar_idx = iter_test.next()
+            inputs_test, _,dom,  tar_idx = iter_test.next()
         except:
             iter_test = iter(dset_loaders["target"])
-            inputs_test, _, tar_idx = iter_test.next()
+            inputs_test, _,dom, tar_idx = iter_test.next()
+            dom = dom.cuda()
             #inputs_test_stg = strong_aug_list[tar_idx]
             inputs_test_stg = get_strong_aug(dsets["strong_aug"], tar_idx)
             # print("#####################################################################")
@@ -267,6 +340,7 @@ def train_target(args):
 
             netF.train()
             netB.train()
+            netD.train()
 
         inputs_test_wk = inputs_test.cuda()
         inputs_test_stg = inputs_test_stg.cuda()
@@ -284,10 +358,19 @@ def train_target(args):
 
         features = netB(netF(inputs_test))
         outputs = netC(features)
+        domain_op = netD(features)
+
+        # print(outputs.shape, domain_op.shape)
+        # print(outputs, domain_op)
+        # exit(0)
+        domain_loss = nn.CrossEntropyLoss()(domain_op[0:args.batch_size], dom)
 
 
         if args.cls_par > 0:
             with torch.no_grad():
+                print('tar ', tar_idx)
+                print('#####################')
+                print('mem_label', mem_label)
                 pred = mem_label[tar_idx]
                 #pred_soft = dd[tar_idx] # vikash
             classifier_loss = nn.CrossEntropyLoss()(outputs[0:args.batch_size], pred)
@@ -384,6 +467,7 @@ def train_target(args):
 
             netF.train()
             netB.train()
+            netD.train()
 
     if args.issave:
         torch.save(netF.state_dict(), osp.join(args.output_dir, "target_F_" + args.savename + ".pt"))
@@ -399,13 +483,13 @@ def dist_loss(input, target, T=0.1):
     log_prob_s = nn.LogSoftmax(dim=1)(input)
     dist_loss = -(prob_t*log_prob_s).sum(dim=1).mean()
     return dist_loss
+
 def print_args(args):
     s = "==========================================\n"
     for arg, content in args.__dict__.items():
         s += "{}:{}\n".format(arg, content)
     print(s)
     return s
-
 
 def obtain_label(loader, netF, netB, netC, args):
     start_test = True
@@ -428,6 +512,7 @@ def obtain_label(loader, netF, netB, netC, args):
                 all_fea = torch.cat((all_fea, feas.float().cpu()), 0)
                 all_output = torch.cat((all_output, outputs.float().cpu()), 0)
                 all_label = torch.cat((all_label, labels.float()), 0)
+            
     ##################### Done ##################################
     all_output = nn.Softmax(dim=1)(all_output)
     mean_all_output = torch.mean(all_output,dim=0).numpy()
@@ -513,6 +598,71 @@ def distributed_sinkhorn(out,eps=0.1, niters=3,world_size=1):
     #exit(0)
     return Q.t()
 
+def classwise_entropy(args, dsets):
+
+    if args.net[0:3] == 'res':
+        netF = network.ResBase(res_name=args.net, se=args.se, nl=args.nl).cuda()
+    elif args.net[0:3] == 'vgg':
+        netF = network.VGGBase(vgg_name=args.net).cuda()
+    elif args.net == 'vit':
+        netF = network.ViT().cuda()
+    elif args.net == 'deit_s':
+        netF = torch.hub.load('facebookresearch/deit:main', 'deit_small_patch16_224', pretrained=True).cuda()
+        netF.in_features = 1000
+    
+    netB = network.feat_bootleneck(type=args.classifier, feature_dim=netF.in_features,
+                                   bottleneck_dim=args.bottleneck).cuda()
+    netC = network.feat_classifier(type=args.layer, class_num=args.class_num, bottleneck_dim=args.bottleneck).cuda()
+    
+    netD = network.feat_classifier(type=args.layer, class_num=3, bottleneck_dim=args.bottleneck).cuda()
+
+    modelpath = args.output_dir_src + '/source_F.pt'
+    netF.load_state_dict(torch.load(modelpath))
+    
+    modelpath = args.output_dir_src + '/source_B.pt'
+    netB.load_state_dict(torch.load(modelpath))
+
+    modelpath = args.output_dir_src + '/source_C.pt'
+    netC.load_state_dict(torch.load(modelpath))
+    
+    print(args.output_dir_src, 'Loaded')
+
+    netF.eval()
+    netC.eval()
+    netB.eval()
+    
+    print()
+    dset_loaders = {}
+    entropy_loss = HLoss()
+
+    with open('entropy_store.csv', 'w') as f:
+        f.write(f'Domain, Image, Entropy\n')
+
+    for domain in dsets.keys():
+        domain_loss = 0
+        loader = DataLoader(dsets[domain], batch_size=1, shuffle=False, num_workers=args.worker,
+                                      drop_last=False)
+        with torch.no_grad():
+            iter_test = iter(loader)
+            for _ in range(len(loader)):
+                data = iter_test.next()
+                inputs = data[0]
+                labels = data[1]
+                domain = data[2]
+                idx = data[3]
+                
+                inputs = inputs.cuda()
+                feas = netB(netF(inputs))
+                outputs = netC(feas)
+                ent_loss = entropy_loss(outputs)
+                domain_loss += ent_loss
+
+                with open('entropy_store.csv', 'a') as f:
+                    f.write(f'{domain.item()}, {idx.item()}, {ent_loss.item()}\n')
+            print('Total Entropy for', domain , domain_loss.item())
+
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Rand-Augment')
     parser.add_argument('--gpu_id', type=str, nargs='?', default='0', help="device id to run")
@@ -583,6 +733,8 @@ if __name__ == "__main__":
     random.seed(SEED)
     # torch.backends.cudnn.deterministic = True
 
+
+
     for i in range(len(names)):
 
         if i == args.s:
@@ -601,8 +753,7 @@ if __name__ == "__main__":
         mode = 'online' if args.wandb else 'disabled'
         
         import wandb
-        #wandb.init(project='EarlyStop_STDA_DomainNet', entity='vclab', name=f'{names[args.s]} to {names[args.t]}', reinit=True,mode=mode)
-        wandb.init(project='Dual Clustering', entity='vclab', name=f'{names[args.s]} to {names[args.t]} only cls_loss', reinit=True,mode=mode)
+        wandb.init(project='EarlyStop_STDA_DomainNet', entity='vclab', name=f'{names[args.s]} to {names[args.t]}', reinit=True,mode=mode)
 
         args.output_dir_src = osp.join(args.output_src, args.da, args.dset, names[args.s][0].upper())
         args.output_dir = osp.join(args.output, 'STDA', args.dset, names[args.s][0].upper() + names[args.t][0].upper())
@@ -618,4 +769,12 @@ if __name__ == "__main__":
         args.out_file = open(osp.join(args.output_dir, 'log_' + args.savename + '.txt'), 'w')
         args.out_file.write(print_args(args) + '\n')
         args.out_file.flush()
+
+        #################################
+        _, dsets = target_data_load(args, batch_size=64,txt_path='data/office-home', dset=None, transform=None)
+        classwise_entropy(args,dsets)
+        exit(0)
+        #################################
+
         train_target(args)
+        

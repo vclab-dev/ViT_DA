@@ -1,0 +1,1 @@
+CUDA_VISIBLE_DEVICES=0 python3 MixUp_KD.py --suffix raw --wandb 1 --batch-size 256
