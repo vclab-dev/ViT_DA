@@ -226,7 +226,7 @@ def train_source(args):
 
     acc_init = 0
     max_iter = args.max_epoch * len(dset_loaders["source_tr"])
-    interval_iter = max_iter // 10
+    interval_iter = max_iter // args.interval
     iter_num = 0
 
     netF.train()
@@ -355,6 +355,7 @@ if __name__ == "__main__":
     parser.add_argument('--s', type=int, default=0, help="source")
     parser.add_argument('--t', type=int, default=1, help="target")
     parser.add_argument('--max_epoch', type=int, default=20, help="max iterations")
+    parser.add_argument('--interval', type=int, default=20, help="interval")
     parser.add_argument('--batch_size', type=int, default=64, help="batch_size")
     parser.add_argument('--worker', type=int, default=4, help="number of workers")
     parser.add_argument('--dset', type=str, default='office', choices=['visda-2017', 'office', 'office-home', 'office-caltech', 'pacs', 'domain_net'])
@@ -406,7 +407,7 @@ if __name__ == "__main__":
     args.s_dset_path = folder + args.dset + '/' + names[args.s] + '.txt'
     args.test_dset_path = folder + args.dset + '/' + names[args.t] + '.txt'     
     mode = 'online' if args.wandb else 'disabled'
-    wandb.init(project='BMVC_src_train_DomainNet', entity='vclab', name=f'SRC Train: {names[args.s]}', mode=mode)
+    wandb.init(project='Source Training', entity='vclab', name=f'{args.dset} SRC Train: {names[args.s]}', mode=mode)
     print(print_args(args))
     if args.dset == 'office-home':
         if args.da == 'pda':

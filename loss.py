@@ -251,4 +251,4 @@ def SoftCrossEntropyLoss(logit, soft_pseudo_label):   # Checked and is correct
     loss = -(soft_pseudo_label*p).sum(dim=1)
 
     # print('Sum of loss', loss.shape)
-    return loss.mean()        
+    return loss      
