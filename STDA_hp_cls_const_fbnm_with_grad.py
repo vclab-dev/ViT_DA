@@ -290,7 +290,7 @@ def train_target(args):
             netC.eval()
             ################################ Done ###################################
             print('Starting to find Pseudo Labels! May take a while :)')
-            mem_label, soft_output, dd, mean_all_output, actual_label,grad_norm = obtain_label(dset_loaders['test'], netF, netB, netC, args) # test loader same as targe but has 3*batch_size compared to target and train
+            mem_label, soft_output, dd, mean_all_output, actual_label,grad_norm, grad_norm_stg = obtain_label(dset_loaders['test'], dsets["strong_aug"], netF, netB, netC, args) # test loader same as targe but has 3*batch_size compared to target and train
             if args.rlcc:
                 if iter_num == 0:
                     prev_mem_label = mem_label
@@ -338,27 +338,27 @@ def train_target(args):
         features = netB(netF(inputs_test))
         outputs = netC(features)
 
-        if args.grad_norm==1 and args.cls_par > 0:
-            #print("running with bridge")
-            with torch.no_grad():
-                pred = mem_label[tar_idx]
-                # print(grad_norm["2"])
-                # print("tar index:",tar_idx)
-                batch_sample_weight = torch.tensor(grad_norm["2"])[tar_idx].cuda()
-                batch_sample_weight = 1.0/batch_sample_weight
-                # print("batch_sample_weight:",batch_sample_weight)
-                # exit(0)
-                #pred_soft = dd[tar_idx] # vikash
-            if args.soft_pl:
-                classifier_loss = SoftCrossEntropyLoss(outputs[0:args.batch_size], pred)
-                classifier_loss  = torch.mean(classifier_loss*batch_sample_weight)
-            else:
-                classifier_loss = nn.CrossEntropyLoss(reduction='none')(outputs[0:args.batch_size], pred)
-                classifier_loss  = torch.mean(classifier_loss*batch_sample_weight)
+        # if args.grad_norm==1 and args.cls_par > 0:
+        #     #print("running with bridge")
+        #     with torch.no_grad():
+        #         pred = mem_label[tar_idx]
+        #         # print(grad_norm["2"])
+        #         # print("tar index:",tar_idx)
+        #         batch_sample_weight = torch.tensor(grad_norm["2"])[tar_idx].cuda()
+        #         batch_sample_weight = 1.0/batch_sample_weight
+        #         # print("batch_sample_weight:",batch_sample_weight)
+        #         # exit(0)
+        #         #pred_soft = dd[tar_idx] # vikash
+        #     if args.soft_pl:
+        #         classifier_loss = SoftCrossEntropyLoss(outputs[0:args.batch_size], pred)
+        #         classifier_loss  = torch.mean(classifier_loss*batch_sample_weight)
+        #     else:
+        #         classifier_loss = nn.CrossEntropyLoss(reduction='none')(outputs[0:args.batch_size], pred)
+        #         classifier_loss  = torch.mean(classifier_loss*batch_sample_weight)
             
-            classifier_loss *= args.cls_par   
+        #     classifier_loss *= args.cls_par   
 
-        elif args.grad_norm==0 and args.cls_par > 0:
+        if args.cls_par > 0:
             with torch.no_grad():
                 pred = mem_label[tar_idx]
                 #pred_soft = dd[tar_idx] # vikash
@@ -393,12 +393,25 @@ def train_target(args):
             #print(gt_w,gt_s)
         # consistancy_loss = 0.5*(torch.mean(loss.soft_CE(nn.Softmax(dim=1)(outputs_stg),gt_w)) + torch.mean(loss.soft_CE(nn.Softmax(dim=1)(outputs_test),gt_s)))
         # classifier_loss += consistancy_loss
-        if args.fbnm:
-            softmax_out = nn.Softmax(dim=1)(outputs[0:args.batch_size])
-            list_svd,_ = torch.sort(torch.sqrt(torch.sum(torch.pow(softmax_out,2),dim=0)), descending=True)
-            fbnm_loss = - torch.mean(list_svd[:min(softmax_out.shape[0],softmax_out.shape[1])])
+        if args.fbnm and args.grad_norm == 1:
+            batch_sample_weight = torch.tensor(grad_norm["2"])[tar_idx].cuda()
+            batch_sample_weight = 1.0/batch_sample_weight
+            batch_sample_weight_stg = torch.tensor(grad_norm_stg["2"])[tar_idx].cuda()
+            batch_sample_weight_stg = 1.0/batch_sample_weight_stg
+
+            softmax_out_fbnm = nn.Softmax(dim=1)(outputs)
+            batch_sample_wt = torch.cat((batch_sample_weight, batch_sample_weight_stg), dim=0)
+            # print(softmax_out_fbnm.shape)
+            softmax_out_fbnm_2 = softmax_out_fbnm * batch_sample_wt.reshape(-1,1)
+            list_svd,_ = torch.sort(torch.sqrt(torch.sum(torch.pow(softmax_out_fbnm_2,2),dim=0)), descending=True)
+            fbnm_loss = - torch.mean(list_svd[:min(softmax_out_fbnm_2.shape[0],softmax_out_fbnm_2.shape[1])])
             fbnm_loss = args.fbnm_par*fbnm_loss
             #classifier_loss += transfer_loss
+        elif args.fbnm and args.grad_norm == 0:
+            softmax_out_fbnm = nn.Softmax(dim=1)(outputs)
+            list_svd,_ = torch.sort(torch.sqrt(torch.sum(torch.pow(softmax_out_fbnm,2),dim=0)), descending=True)
+            fbnm_loss = - torch.mean(list_svd[:min(softmax_out_fbnm.shape[0],softmax_out_fbnm.shape[1])])
+            fbnm_loss = args.fbnm_par*fbnm_loss
         else:
             fbnm_loss = torch.tensor(0.0).cuda()
         if args.ent:
@@ -510,7 +523,7 @@ def print_args(args):
     return s
 
 
-def obtain_label(loader, netF, netB, netC, args):
+def obtain_label(loader, dset_stg, netF, netB, netC, args):
     start_test = True
     # Accumulate feat, logint and gt labels
     with torch.no_grad():
@@ -519,18 +532,30 @@ def obtain_label(loader, netF, netB, netC, args):
             data = iter_test.next()
             inputs = data[0]
             labels = data[1]
+            target_idx = data[2]
+            input_stg = get_strong_aug(dset_stg, target_idx)
             inputs = inputs.cuda()
+            input_stg = input_stg.cuda()
             feas = netB(netF(inputs))
             outputs = netC(feas)
+
+            feas_stg = netB(netF(input_stg))
+            outputs_stg = netC(feas_stg)
+
             if start_test:
                 all_fea = feas.float().cpu()
                 all_output = outputs.float().cpu()
                 all_label = labels.float()
                 start_test = False
+                all_fea_stg = feas_stg.float().cpu()
+                all_output_stg = outputs_stg.float().cpu()
             else:
                 all_fea = torch.cat((all_fea, feas.float().cpu()), 0)
                 all_output = torch.cat((all_output, outputs.float().cpu()), 0)
                 all_label = torch.cat((all_label, labels.float()), 0)
+
+                all_fea_stg = torch.cat((all_fea_stg, feas_stg.float().cpu()), 0)
+                all_output_stg = torch.cat((all_output_stg, outputs_stg.float().cpu()), 0)
     ##################### Done ##################################
     all_output = nn.Softmax(dim=1)(all_output)
 
@@ -539,12 +564,15 @@ def obtain_label(loader, netF, netB, netC, args):
     # ent = torch.sum(-all_output * torch.log(all_output + args.epsilon), dim=1)
     # unknown_weight = 1 - ent / np.log(args.class_num)
     _, predict = torch.max(all_output, 1)
+    _, predict_stg = torch.max(all_output_stg, 1)
 
     accuracy = torch.sum(torch.squeeze(predict).float() == all_label).item() / float(all_label.size()[0]) # find accuracy on test sampels
     # find centroid per class
     if args.distance == 'cosine':
         all_fea = torch.cat((all_fea, torch.ones(all_fea.size(0), 1)), 1)
         all_fea = (all_fea.t() / torch.norm(all_fea, p=2, dim=1)).t()######### Not Clear (looks like feature normalization though)#######
+        all_fea_stg = torch.cat((all_fea_stg, torch.ones(all_fea_stg.size(0), 1)), 1)
+        all_fea_stg = (all_fea_stg.t() / torch.norm(all_fea_stg, p=2, dim=1)).t()
     ### all_fea: extractor feature [bs,N]
     # print(all_fea.shape)
     all_fea = all_fea.float().cpu().numpy()
@@ -592,7 +620,9 @@ def obtain_label(loader, netF, netB, netC, args):
     grad_norm = grad_embedding(all_fea, pred_label.astype('int'), netC)
     grad_norm["pseudo_label"] = pred_label.astype('float')
     grad_norm["actual_label"] = all_label.float().numpy()
-    return pred_label, all_output.cpu().numpy(), dd.numpy().astype('float32') ,mean_all_output, all_label.cpu().numpy().astype(np.uint8), grad_norm
+
+    grad_norm_stg = grad_embedding(all_fea_stg.numpy(), predict_stg.numpy().astype('int'), netC)
+    return pred_label, all_output.cpu().numpy(), dd.numpy().astype('float32') ,mean_all_output, all_label.cpu().numpy().astype(np.uint8), grad_norm, grad_norm_stg
 
 def distributed_sinkhorn(out,eps=0.1, niters=3,world_size=1):
     Q = torch.exp(out / eps).t() # Q is K-by-B for consistency with notations from our paper
