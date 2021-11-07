@@ -80,12 +80,12 @@ def data_load(batch_size=64,txt_path='data/office-home'):
                 'realworld': f'{txt_path}/RealWorld.txt'}
 
     for domain, paths in txt_files.items(): 
-        # txt_tar = open(paths).readlines()
-        txt_tar = open('Art.txt').readlines()#!@
+        # txt_tar = open(paths).readlines() #!@
+        txt_tar = open('Art.txt').readlines() #!@
         dsets[domain] = ImageList_MixUp(txt_tar, transform=image_train()) #!@
         dset_loaders[domain] = DataLoader(dsets[domain], batch_size=batch_size, shuffle=True,drop_last=False)
         break #!@
-    return dset_loaders
+    return dset_loaders,dsets
     
 parser = argparse.ArgumentParser(description='PyTorch CIFAR10 Training')
 parser.add_argument('--lr', default=0.1, type=float, help='learning rate')
@@ -144,8 +144,16 @@ transform_test = transforms.Compose([
 # trainloader = torch.utils.data.DataLoader(trainset,
 #                                           batch_size=args.batch_size,
 #                                           shuffle=True, num_workers=8)
-all_loader = data_load(batch_size=args.batch_size)
+all_loader,all_dset = data_load(batch_size=args.batch_size)
 trainloader = all_loader['clipart']
+
+###############
+all_data_clswise = np.array(all_dset['clipart'].imgs)
+numbers = np.array(list(map(int, all_data_clswise[:,2])))
+print(np.argwhere(numbers==0))
+print(numbers)
+exit(0)
+###############
 testloader =  all_loader['clipart']
 
 # testset = datasets.CIFAR10(root='~/data', train=False, download=False,

@@ -1,0 +1,2 @@
+python STDA_hp_cls_const_fbnm.py --s 0 --gpu_id 0 --cls_par 0.2 --const_par 0.1 --fbnm_par 4.0 --grad_norm 0 --lr 0.001 --wandb 1 --output best_weight_wrt_A2C --batch_size 56
+python STDA_hp_cls_const_fbnm.py --s 1 --gpu_id 0 --cls_par 0.2 --const_par 0.1 --fbnm_par 4.0 --grad_norm 0 --lr 0.001 --wandb 1 --output best_weight_wrt_A2C --batch_size 56
