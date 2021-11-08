@@ -47,29 +47,33 @@ def grad_embedding(feat, pseudo_gt, netC):
     feat = torch.from_numpy(feat)[:,0:-1].cuda()
     output = netC(feat)
     #print("Model:",netC)
-    total_grad = {"0":[], "1":[],"2":[]} # 2 corresponds grad_norm w.r.t to total parameter and 0 or 1 id for bias, nor sure about which one
+    total_grad = {}#{"0":[], "1":[],"2":[]} # 2 corresponds grad_norm w.r.t to total parameter and 0 or 1 id for bias, nor sure about which one
+    grads_final =  [[],[],[]]
     for i in range(len(pseudo_gt)):
         p_hat, p = torch.unsqueeze(output[i],0), torch.tensor([pseudo_gt[i]]).view(-1).cuda()
         #print(p_hat.shape, p.shape)
         instance_loss = nn.CrossEntropyLoss()(p_hat, p)
         #instance_loss.requires_grad = True
         instance_loss.backward(retain_graph=True) #retain_graph=True
-        grads = []
-        for p in netC.parameters():
+        for idx, p in enumerate(netC.parameters()):
+            #print("######################",idx)
             #print(p.grad)
             temp_grad = p.grad.view(-1).detach().cpu().numpy()
+            grads_final[idx].append(np.linalg.norm(temp_grad))
             #print("temp_grad shape:",temp_grad.shape)
-            grads.append(temp_grad)
-            p.grad = None
+            #grads.append(temp_grad)
+            p.grad.zero_()# = None
             # param_norm = p.grad.data.norm(2)
             # total_norm += param_norm.item() ** 2
             # total_norm = total_norm ** (1. / 2)
         #print("Grad List:",grads)
         #print("Grad Element:",grads[0].shape)
-        grads = np.array(grads)
+        #grads = np.array(grads)
         #print("Grads Shape:",grads.shape)
-        for i in range(len(grads)):
-            total_grad[str(i)].append(np.linalg.norm(grads[i]))
+        # for j in range(len(grads)):
+        #         grads_final[j].append(np.linalg.norm(grads[j]))
+        # print("final grad for element:",i,"-----",grads_final)
+        # print("----------")
         #grad_norm = np.array([np.linalg.norm(i) for i in grads])
         #total_grad.append(grad_norm)
         # # if len(total_grad):
@@ -77,6 +81,8 @@ def grad_embedding(feat, pseudo_gt, netC):
         #print("grad Norm=: for instance {} is =:{}".format(i,np.array([np.linalg.norm(i) for i in grads])))
         # if (i+1)%5==0:
         #     exit(0)
+        total_grad["0"], total_grad["1"], total_grad["2"] = grads_final[0], grads_final[1], grads_final[2]
+        #print(total_grad["2"])
         threshold = get_embedding_threshold(total_grad["2"])
         total_grad["threshold"] = threshold
         #print(threshold)
@@ -557,6 +563,7 @@ def obtain_label(loader, dset_stg, netF, netB, netC, args):
 
                 all_fea_stg = torch.cat((all_fea_stg, feas_stg.float().cpu()), 0)
                 all_output_stg = torch.cat((all_output_stg, outputs_stg.float().cpu()), 0)
+            break
     ##################### Done ##################################
     all_output = nn.Softmax(dim=1)(all_output)
 
@@ -618,7 +625,7 @@ def obtain_label(loader, dset_stg, netF, netB, netC, args):
     print(log_str + '\n')
     #exit(0)
     dd = F.softmax(torch.from_numpy(dd), dim=1)
-    grad_norm = grad_embedding(all_fea, pred_label.astype('int'), netC)
+    grad_norm = grad_embedding(all_fea, pred_label.astype('int'), netC) #change
     grad_norm["pseudo_label"] = pred_label.astype('float')
     grad_norm["actual_label"] = all_label.float().numpy()
 
