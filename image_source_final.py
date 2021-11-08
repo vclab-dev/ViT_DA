@@ -194,11 +194,11 @@ def train_source(args):
         netF = network.VGGBase(vgg_name=args.net).cuda()
     elif args.net == 'vit':
         netF = network.ViT().cuda()
-    elif args.net == 'deit_s':
-        netF = torch.hub.load('facebookresearch/deit:main', 'deit_small_patch16_224', pretrained=True).cuda()
-        netF.in_features = 1000
-    elif args.net == 'deit_s_distilled':
-        netF = torch.hub.load('facebookresearch/deit:main', 'deit_small_distilled_patch16_224', pretrained=True).cuda()
+    elif args.net[0:4] == 'deit':
+        if args.net == 'deit_s':
+            netF = torch.hub.load('facebookresearch/deit:main', 'deit_small_patch16_224', pretrained=True).cuda()
+        elif args.net == 'deit_b':
+            netF = torch.hub.load('facebookresearch/deit:main', 'deit_base_patch16_224', pretrained=True).cuda()
         netF.in_features = 1000
 
     
