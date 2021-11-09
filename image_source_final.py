@@ -407,7 +407,7 @@ if __name__ == "__main__":
     args.s_dset_path = folder + args.dset + '/' + names[args.s] + '.txt'
     args.test_dset_path = folder + args.dset + '/' + names[args.t] + '.txt'     
     mode = 'online' if args.wandb else 'disabled'
-    wandb.init(project='Source Training', entity='vclab', name=f'{args.dset} SRC Train: {names[args.s]}', mode=mode)
+    wandb.init(project='Source Training', entity='vclab', name=f'{args.dset} {args.net} = SRC Train: {names[args.s]}', mode=mode)
     print(print_args(args))
     if args.dset == 'office-home':
         if args.da == 'pda':

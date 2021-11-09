@@ -19,6 +19,7 @@ from sklearn.metrics import confusion_matrix
 from sklearn.cluster import KMeans
 import wandb
 import pandas as pd
+from STDA_hp_cls_const_fbnm_with_grad import grad_embedding
 
 def op_copy(optimizer):
     for param_group in optimizer.param_groups:
@@ -128,19 +129,29 @@ def cal_acc(loader, netF, netB, netC, flag=False):
             labels = data[1]
             idx = data[2]
             inputs = inputs.cuda()
-            outputs = netC(netB(netF(inputs)))
+            feas = netB(netF(inputs))
+            outputs = netC(feas)
             if start_test:
+                all_fea = feas.float().cpu()
                 all_output = outputs.float().cpu()
                 all_label = labels.float()
                 start_test = False
                 all_idx = idx.int()
             else:
+                all_fea = torch.cat((all_fea, feas.float().cpu()), 0)
                 all_output = torch.cat((all_output, outputs.float().cpu()), 0)
                 all_label = torch.cat((all_label, labels.float()), 0)
                 all_idx = torch.cat((all_idx, idx.int()), 0)
 
     all_output = nn.Softmax(dim=1)(all_output)
     _, predict = torch.max(all_output, 1)
+
+    all_fea = torch.cat((all_fea, torch.ones(all_fea.size(0), 1)), 1)
+    all_fea = (all_fea.t() / torch.norm(all_fea, p=2, dim=1)).t()
+    all_fea = all_fea.float().cpu().numpy()
+
+    grad_norm = grad_embedding(all_fea, predict.numpy(), netC)
+
     accuracy = torch.sum(torch.squeeze(predict).float() == all_label).item() / float(all_label.size()[0])
     mean_ent = torch.mean(loss.Entropy(all_output)).cpu().data.item()
    
@@ -152,7 +163,7 @@ def cal_acc(loader, netF, netB, netC, flag=False):
         acc = ' '.join(aa)
         return aacc, acc
     else:
-        return accuracy*100, mean_ent, predict, all_idx.numpy()
+        return accuracy*100, mean_ent, predict, all_idx.numpy(), grad_norm
 
 def cal_acc_oda(loader, netF, netB, netC):
     start_test = True
@@ -198,11 +209,11 @@ def test_target(args):
         netF = network.ResBase(res_name=args.net).cuda()
     elif args.net[0:3] == 'vgg':
         netF = network.VGGBase(vgg_name=args.net).cuda()  
-    elif args.net == 'deit_s':
-        netF = torch.hub.load('facebookresearch/deit:main', 'deit_small_patch16_224', pretrained=True).cuda()
-        netF.in_features = 1000
-    elif args.net == 'deit_s_distilled':
-        netF = torch.hub.load('facebookresearch/deit:main', 'deit_small_distilled_patch16_224', pretrained=True).cuda()
+    elif args.net[0:4] == 'deit':
+        if args.net == 'deit_s':
+            netF = torch.hub.load('facebookresearch/deit:main', 'deit_small_patch16_224', pretrained=True).cuda()
+        elif args.net == 'deit_b':
+            netF = torch.hub.load('facebookresearch/deit:main', 'deit_base_patch16_224', pretrained=True).cuda()
         netF.in_features = 1000
     else:
         netF = network.ViT().cuda()
@@ -210,12 +221,20 @@ def test_target(args):
     netB = network.feat_bootleneck(type=args.classifier, feature_dim=netF.in_features, bottleneck_dim=args.bottleneck).cuda()
     netC = network.feat_classifier(type=args.layer, class_num = args.class_num, bottleneck_dim=args.bottleneck).cuda()
     
-    args.modelpath = args.output_dir_src + '/target_F_'+ args.savename + '.pt'   
-    netF.load_state_dict(torch.load(args.modelpath))
-    args.modelpath = args.output_dir_src + '/target_B_'+ args.savename + '.pt'   
-    netB.load_state_dict(torch.load(args.modelpath))
-    args.modelpath = args.output_dir_src + '/target_C_'+ args.savename + '.pt'   
-    netC.load_state_dict(torch.load(args.modelpath))
+    if args.source_test:
+        args.modelpath = args.output_dir_src + '/source_F.pt'   
+        netF.load_state_dict(torch.load(args.modelpath))
+        args.modelpath = args.output_dir_src + '/source_B.pt'   
+        netB.load_state_dict(torch.load(args.modelpath))
+        args.modelpath = args.output_dir_src + '/source_C.pt'   
+        netC.load_state_dict(torch.load(args.modelpath))
+    else:
+        args.modelpath = args.output_dir_src + '/target_F_'+ args.savename + '.pt'   
+        netF.load_state_dict(torch.load(args.modelpath))
+        args.modelpath = args.output_dir_src + '/target_B_'+ args.savename + '.pt'   
+        netB.load_state_dict(torch.load(args.modelpath))
+        args.modelpath = args.output_dir_src + '/target_C_'+ args.savename + '.pt'   
+        netC.load_state_dict(torch.load(args.modelpath))
     netF.eval()
     netB.eval()
     netC.eval()
@@ -229,10 +248,10 @@ def test_target(args):
             acc, acc_list = cal_acc(dset_loaders['test'], netF, netB, netC, True)
             log_str = '\nTraining: {}, Task: {}, Accuracy = {:.2f}%'.format(args.trte, args.name, acc) + '\n' + acc_list
         else:
-            acc, _, predict, idx= cal_acc(dset_loaders['test'], netF, netB, netC, False)
+            acc, _, predict, idx, grad_norm= cal_acc(dset_loaders['test'], netF, netB, netC, False)
             log_str = '\nTraining: {}, Task: {}, Accuracy = {:.2f}%'.format(args.trte, args.name, acc)
 
-    return acc, predict, idx
+    return acc, predict, idx, grad_norm
 
 def print_args(args):
     s = "==========================================\n"
@@ -265,6 +284,7 @@ if __name__ == "__main__":
     parser.add_argument('--nl', type=bool, default=False)
     parser.add_argument('--wandb', type=int, default=0)
     parser.add_argument('--cls_par', type=float, default=0.2)
+    parser.add_argument('--source_test', type=int, default=0)
 
     args = parser.parse_args()
 
@@ -321,7 +341,10 @@ if __name__ == "__main__":
         args.t = i
         args.name = names[args.s][0].upper() + names[args.t][0].upper()
 
-        args.output_dir_src = osp.join(args.output, 'STDA', args.dset, args.name.upper())
+        if args.source_test:
+            args.output_dir_src = osp.join(args.output, args.da, args.dset, names[args.s][0].upper())
+        else:
+            args.output_dir_src = osp.join(args.output, 'STDA', args.dset, args.name.upper())
         folder = './data/'
         args.s_dset_path = folder + args.dset + '/' + names[args.s] + '.txt'
         args.test_dset_path = folder + args.dset + '/' + names[args.t] + '.txt'
@@ -336,15 +359,18 @@ if __name__ == "__main__":
                 args.src_classes = [i for i in range(25)]
                 args.tar_classes = [i for i in range(65)]
 
-        acc, pl, idx = test_target(args)
+        acc, pl, idx, grad_norm = test_target(args)
         txt_test = open(args.test_dset_path).readlines()
+        
         img_path = []
         label = []
         for i in list(idx):
             image_path, lbl = txt_test[i].split(' ')
             img_path.append(image_path)
             label.append(int(lbl))
-        dict = {'Image Path': img_path, 'Actual Label': label, 'Pseudo Label': pl, 'Domain': args.t}
+        dict = {'Domain': args.t, 'Image Path': img_path, 'Actual Label': label, 'Pseudo Label': pl, 'grad_norm': grad_norm['2']}
+        # print(dict)
         print('Write to CSV')
         df = pd.DataFrame(dict)
-        df.to_csv(names[args.s]+'.csv', mode = 'a', header=False, index=False)
+        hdr = False  if os.path.isfile(f'{names[args.s]}.csv') else True
+        df.to_csv(names[args.s]+'.csv', mode = 'a', header=hdr, index=False)

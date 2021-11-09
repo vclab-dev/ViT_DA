@@ -61,7 +61,7 @@ def grad_embedding(feat, pseudo_gt, netC):
             #print("######################",idx)
             #print(p.grad)
             temp_grad = p.grad.view(-1).detach().cpu().numpy()
-            print("idx:",idx, "inside inner for",np.linalg.norm(temp_grad))
+            # print("idx:",idx, "inside inner for",np.linalg.norm(temp_grad))
             #grads_final[idx].append(np.linalg.norm(temp_grad))
             grads_final[i,idx] = np.linalg.norm(temp_grad)
             #print("temp_grad shape:",temp_grad.shape)
@@ -77,6 +77,7 @@ def grad_embedding(feat, pseudo_gt, netC):
         #total_grad["threshold"] = threshold
         #print(threshold)
     return total_grad
+
 def op_copy(optimizer):
     for param_group in optimizer.param_groups:
         param_group['lr0'] = param_group['lr']
@@ -222,7 +223,7 @@ def train_target(args):
             netF = torch.hub.load('facebookresearch/deit:main', 'deit_base_patch16_224', pretrained=True).cuda()
         netF.in_features = 1000
     
-    summary(netF, (3, 224, 224))
+    # summary(netF, (3, 224, 224))
         
     netB = network.feat_bootleneck(type=args.classifier, feature_dim=netF.in_features,
                                    bottleneck_dim=args.bottleneck).cuda()
@@ -614,7 +615,7 @@ def obtain_label(loader, dset_stg, netF, netB, netC, args):
     args.out_file.write(log_str + '\n')
     args.out_file.flush()
     print(log_str + '\n')
-    #exit(0)
+
     dd = F.softmax(torch.from_numpy(dd), dim=1)
     grad_norm = grad_embedding(all_fea, pred_label.astype('int'), netC) #change
     grad_norm["pseudo_label"] = pred_label.astype('float')
@@ -697,14 +698,6 @@ if __name__ == "__main__":
     parser.add_argument('--fbnm_par', type=float, default=1.0)
     parser.add_argument('--grad_norm', type=int, default=1)
     args = parser.parse_args()
-    # agrumnets for sweep
-    #args.output = "best_weight_wrt_A2C"
-    # args.output_src = "san"
-    # #args.s = 0
-    # args.worker = 0
-    # args.net = "deit_s"
-    # args.max_epoch = 5
-
 
     if args.dset == 'office-home':
         names = ['Art', 'Clipart', 'Product', 'RealWorld']
