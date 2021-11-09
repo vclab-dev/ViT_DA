@@ -333,8 +333,11 @@ if __name__ == "__main__":
 
     
     args.name_src = names[args.s][0].upper()
-
     args.savename = 'par_' + str(args.cls_par)
+    args.save_dir = osp.join('test_target', args.dset)
+    if not osp.exists(args.save_dir):
+        os.system('mkdir -p ' + args.save_dir)
+
     for i in range(len(names)):
         if i == args.s:
             continue
@@ -373,4 +376,4 @@ if __name__ == "__main__":
         print('Write to CSV')
         df = pd.DataFrame(dict)
         hdr = False  if os.path.isfile(f'{names[args.s]}.csv') else True
-        df.to_csv(names[args.s]+'.csv', mode = 'a', header=hdr, index=False)
+        df.to_csv(osp.join(args.save_dir, names[args.s]+'.csv'), mode = 'a', header=hdr, index=False)

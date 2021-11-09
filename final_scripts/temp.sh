@@ -1,0 +1,3 @@
+# python test_target.py --gpu_id 2 --s 0 --dset office-home --net deit_s --output src_train --source_test 1
+# python STDA_hp_cls_const_fbnm_with_grad.py --gpu_id 2 --s 0 --t 1 --max_epoch 100 --interval 100 --batch_size 64 --dset office-home --net deit_s --wandb 1 --fbnm_par 4.0 --grad_norm 1 --output_src src_train --output STDA_wt_fbnm_work_grad_rlcc_soft_stg --suffix fbnm_work_grad_rlcc_soft_stg --rlcc --soft_pl
+python STDA_hp_cls_with_grad.py --gpu_id 2 --s 0 --t 1 --max_epoch 30 --interval 30 --batch_size 64 --dset office-home --net deit_s --wandb 1 --fbnm_par 4.0 --grad_norm 1 --output_src src_train --output STDA_wt_cls_work_grad_rlcc_soft_stg --suffix cls_work_grad_rlcc_soft_stg --rlcc --soft_pl
