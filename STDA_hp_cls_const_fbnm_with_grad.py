@@ -21,6 +21,7 @@ from timm.data.auto_augment import rand_augment_transform # timm for randaugment
 from rlcc import rlcc
 np.set_printoptions(threshold=sys.maxsize)
 import wandb
+from torchsummary import summary
 #os.environ["WANDB_RUN_ID"] = wandb.util.generate_id()
 
 def get_embedding_threshold(arr):
@@ -48,7 +49,8 @@ def grad_embedding(feat, pseudo_gt, netC):
     output = netC(feat)
     #print("Model:",netC)
     total_grad = {}#{"0":[], "1":[],"2":[]} # 2 corresponds grad_norm w.r.t to total parameter and 0 or 1 id for bias, nor sure about which one
-    grads_final =  [[],[],[]]
+    #grads_final =  [[],[],[]]
+    grads_final = np.zeros((len(pseudo_gt),3))
     for i in range(len(pseudo_gt)):
         p_hat, p = torch.unsqueeze(output[i],0), torch.tensor([pseudo_gt[i]]).view(-1).cuda()
         #print(p_hat.shape, p.shape)
@@ -59,32 +61,20 @@ def grad_embedding(feat, pseudo_gt, netC):
             #print("######################",idx)
             #print(p.grad)
             temp_grad = p.grad.view(-1).detach().cpu().numpy()
-            grads_final[idx].append(np.linalg.norm(temp_grad))
+            print("idx:",idx, "inside inner for",np.linalg.norm(temp_grad))
+            #grads_final[idx].append(np.linalg.norm(temp_grad))
+            grads_final[i,idx] = np.linalg.norm(temp_grad)
             #print("temp_grad shape:",temp_grad.shape)
             #grads.append(temp_grad)
             p.grad.zero_()# = None
             # param_norm = p.grad.data.norm(2)
             # total_norm += param_norm.item() ** 2
             # total_norm = total_norm ** (1. / 2)
-        #print("Grad List:",grads)
-        #print("Grad Element:",grads[0].shape)
-        #grads = np.array(grads)
-        #print("Grads Shape:",grads.shape)
-        # for j in range(len(grads)):
-        #         grads_final[j].append(np.linalg.norm(grads[j]))
-        # print("final grad for element:",i,"-----",grads_final)
-        # print("----------")
-        #grad_norm = np.array([np.linalg.norm(i) for i in grads])
-        #total_grad.append(grad_norm)
-        # # if len(total_grad):
-        # #     sample_gard = grad_norm - total_grad[-1]
-        #print("grad Norm=: for instance {} is =:{}".format(i,np.array([np.linalg.norm(i) for i in grads])))
-        # if (i+1)%5==0:
-        #     exit(0)
-        total_grad["0"], total_grad["1"], total_grad["2"] = grads_final[0], grads_final[1], grads_final[2]
+
+        total_grad["0"], total_grad["1"], total_grad["2"] = grads_final[:,0], grads_final[:,1], grads_final[:,2]
         #print(total_grad["2"])
-        threshold = get_embedding_threshold(total_grad["2"])
-        total_grad["threshold"] = threshold
+        #threshold = get_embedding_threshold(total_grad["2"])
+        #total_grad["threshold"] = threshold
         #print(threshold)
     return total_grad
 def op_copy(optimizer):
@@ -231,6 +221,8 @@ def train_target(args):
         elif args.net == 'deit_b':
             netF = torch.hub.load('facebookresearch/deit:main', 'deit_base_patch16_224', pretrained=True).cuda()
         netF.in_features = 1000
+    
+    summary(netF, (3, 224, 224))
         
     netB = network.feat_bootleneck(type=args.classifier, feature_dim=netF.in_features,
                                    bottleneck_dim=args.bottleneck).cuda()
@@ -563,7 +555,6 @@ def obtain_label(loader, dset_stg, netF, netB, netC, args):
 
                 all_fea_stg = torch.cat((all_fea_stg, feas_stg.float().cpu()), 0)
                 all_output_stg = torch.cat((all_output_stg, outputs_stg.float().cpu()), 0)
-            break
     ##################### Done ##################################
     all_output = nn.Softmax(dim=1)(all_output)
 
@@ -742,41 +733,41 @@ if __name__ == "__main__":
     random.seed(SEED)
     # torch.backends.cudnn.deterministic = True
 
-    for i in range(len(names)):
+    # for i in range(len(names)):
 
-        if i == args.s:
-            continue
-        args.t = i
+    # if i == args.s:
+    #     continue
+    # args.t = i
 
-        folder = './data/'
-        args.s_dset_path = folder + args.dset + '/' + names[args.s] + '.txt'
-        args.test_dset_path = folder + args.dset + '/' + names[args.t] + '.txt'
-        args.t_dset_path = folder + args.dset + '/' + names[args.t] + '.txt'
-        if args.dset =='domain_net':
-            args.txt_eval_dn = folder + args.dset + '/' + names[args.t] + '_test.txt'
-        else:
-            args.txt_eval_dn = args.t_dset_path
+    folder = './data/'
+    args.s_dset_path = folder + args.dset + '/' + names[args.s] + '.txt'
+    args.test_dset_path = folder + args.dset + '/' + names[args.t] + '.txt'
+    args.t_dset_path = folder + args.dset + '/' + names[args.t] + '.txt'
+    if args.dset =='domain_net':
+        args.txt_eval_dn = folder + args.dset + '/' + names[args.t] + '_test.txt'
+    else:
+        args.txt_eval_dn = args.t_dset_path
 
-        mode = 'online' if args.wandb else 'disabled'
-        
-        
-        if args.dset == 'office-home':
-            wandb.init(project='STDA_Office-home', entity='vclab', name=f'{names[args.s]} to {names[args.t]} '+args.suffix, reinit=True,mode=mode)
-        if args.dset == 'office':
-            wandb.init(project='STDA_Office31', entity='vclab', name=f'{names[args.s]} to {names[args.t]} '+ args.suffix, reinit=True,mode=mode)
-        #config = wandb.config
-        args.output_dir_src = osp.join(args.output_src, args.da, args.dset, names[args.s][0].upper())
-        args.output_dir = osp.join(args.output, 'STDA', args.dset, names[args.s][0].upper() + names[args.t][0].upper())
-        args.name = names[args.s][0].upper() + names[args.t][0].upper()
+    mode = 'online' if args.wandb else 'disabled'
+    
+    
+    if args.dset == 'office-home':
+        wandb.init(project='STDA_Office-home', entity='vclab', name=f'{names[args.s]} to {names[args.t]} '+args.suffix, reinit=True,mode=mode)
+    if args.dset == 'office':
+        wandb.init(project='STDA_Office31', entity='vclab', name=f'{names[args.s]} to {names[args.t]} '+ args.suffix, reinit=True,mode=mode)
+    #config = wandb.config
+    args.output_dir_src = osp.join(args.output_src, args.da, args.dset, names[args.s][0].upper())
+    args.output_dir = osp.join(args.output, 'STDA', args.dset, names[args.s][0].upper() + names[args.t][0].upper())
+    args.name = names[args.s][0].upper() + names[args.t][0].upper()
 
-        if not osp.exists(args.output_dir):
-            os.system('mkdir -p ' + args.output_dir)
-        if not osp.exists(args.output_dir):
-            os.mkdir(args.output_dir)
+    if not osp.exists(args.output_dir):
+        os.system('mkdir -p ' + args.output_dir)
+    if not osp.exists(args.output_dir):
+        os.mkdir(args.output_dir)
 
-        args.savename = 'par_' + str(args.cls_par)
-        
-        args.out_file = open(osp.join(args.output_dir, 'log_' + args.savename + '.txt'), 'w')
-        args.out_file.write(print_args(args) + '\n')
-        args.out_file.flush()
-        train_target(args)
+    args.savename = 'par_' + str(args.cls_par)
+    
+    args.out_file = open(osp.join(args.output_dir, 'log_' + args.savename + '.txt'), 'w')
+    args.out_file.write(print_args(args) + '\n')
+    args.out_file.flush()
+    train_target(args)
