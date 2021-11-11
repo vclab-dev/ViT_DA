@@ -47,8 +47,7 @@ def image_train(resize_size=256, crop_size=224, alexnet=False):
   if not alexnet:
     normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
                                    std=[0.229, 0.224, 0.225])
-  else:
-    normalize = Normalize(meanfile='./ilsvrc_2012_mean.npy')
+
   return  transforms.Compose([
         transforms.Resize((resize_size, resize_size)),
         transforms.RandomCrop(crop_size),
@@ -152,7 +151,7 @@ def train(args, epoch,all_loader):
     return (train_loss/batch_idx, reg_loss/batch_idx, 100.*correct/total)
 
 
-def test(epoch):
+def test(epoch,testloader):
     global best_acc
     netF.eval()
     netB.eval()
@@ -162,7 +161,7 @@ def test(epoch):
     total = 0
     with torch.no_grad():
 
-        for batch_idx, (inputs, pseudo_lbl, targets, domain) in enumerate(all_loader):
+        for batch_idx, (inputs, pseudo_lbl, targets, domain) in enumerate(testloader):
             if use_cuda:
                 inputs, pseudo_lbl, targets, domain = inputs.cuda(), pseudo_lbl.cuda(), targets.cuda(), domain.cuda()
             inputs, pseudo_lbl = Variable(inputs), Variable(pseudo_lbl)
@@ -171,10 +170,10 @@ def test(epoch):
 
             test_loss += loss.item()
             _, predicted = torch.max(outputs.data, 1)
-            total += pseudo_lbl.size(0)
+            total += targets.size(0)
             correct += predicted.eq(targets.data).cpu().sum()
 
-            progress_bar(batch_idx, len(all_loader),'Loss: %.3f | Acc: %.3f%% (%d/%d)'% (test_loss/(batch_idx+1), 100.*correct/total, correct, total))
+            progress_bar(batch_idx, len(testloader),'Loss: %.3f | Acc: %.3f%% (%d/%d)'% (test_loss/(batch_idx+1), 100.*correct/total, correct, total))
         acc = 100.*correct/total
         if epoch == start_epoch + args.epoch - 1 or acc > best_acc:
             checkpoint(args, netF, netB, netC)
@@ -185,7 +184,7 @@ def test(epoch):
 
 def checkpoint(args, netF, netB, netC):
     # Save checkpoint.
-    save_pth = os.path.join('MTDA_weights', args.dset, args.s)
+    save_pth = os.path.join(args.save_weights, args.dset, names[args.s])
     if not os.path.exists(save_pth):
         os.makedirs(save_pth)
     torch.save(netF.state_dict(), os.path.join(save_pth, "target_F.pt"))
@@ -226,6 +225,7 @@ if __name__ == '__main__':
     parser.add_argument('--wandb', type=int, default=0)
     parser.add_argument('--s', default=0, type=int)
     parser.add_argument('--txt_folder', default='test_target', type=str)
+    parser.add_argument('--save_weights', default='MTDA_weights', type=str)
     parser.add_argument('--dset', type=str, default='office-home',
                         choices=['visda-2017', 'office', 'office-home', 'office-caltech', 'pacs', 'domain_net'])
 
@@ -321,13 +321,15 @@ if __name__ == '__main__':
 
     print(f'\nStarting training {names[args.s]} to others. ({len(all_dset)} Images)')
 
+    testloader = all_loader
+    
     for epoch in range(start_epoch, args.epoch):
 
         train_loss, reg_loss, train_acc = train(args, epoch, all_loader)
 
-        if epoch % 15 == 0:
+        if epoch % 10 == 0:
             print('\n Start Testing')
-            test_loss, test_acc = test(epoch)
+            test_loss, test_acc = test(epoch,testloader)
             wandb.log({ 'test_loss': test_loss,  
                         'test_acc': test_acc,
                         })
