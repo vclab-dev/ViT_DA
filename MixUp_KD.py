@@ -39,7 +39,7 @@ def init_src_model_load(args):
         netF.in_features = 1000
 
     netB = network.feat_bootleneck(type='bn', feature_dim=netF.in_features,bottleneck_dim=256).cuda()
-    netC = network.feat_classifier(type='wn', class_num=args.num_classes, bottleneck_dim=256).cuda()
+    netC = network.feat_classifier(type='wn', class_num=args.class_num, bottleneck_dim=256).cuda()
 
     return netF, netB, netC
 
@@ -57,7 +57,7 @@ def image_train(resize_size=256, crop_size=224, alexnet=False):
         normalize
     ])
 
-def data_load(batch_size=64,txt_path='data/office-home'):
+def data_load(args):
     ## prepare data
 
     def image_train(resize_size=256, crop_size=224, alexnet=False):
@@ -72,19 +72,9 @@ def data_load(batch_size=64,txt_path='data/office-home'):
     dsets = {}
     dset_loaders = {}
     
-    # txt_files = {'clipart': f'{txt_path}/Clipart.txt',
-    #             'art': f'{txt_path}/Art.txt', 
-    #             'product':  f'{txt_path}/Product.txt', 
-    #             'realworld': f'{txt_path}/RealWorld.txt'}
-
-    args.num_classes = 65 #!@
-
-    # for domain, paths in txt_files.items(): 
-        # txt_tar = open(paths).readlines() #!@
-    txt_tar = open('Art.txt').readlines() #!@
-    dsets['art'] = ImageList_MixUp(txt_tar, transform=image_train()) #!@
-    dset_loaders['art'] = DataLoader(dsets['art'], batch_size=batch_size, shuffle=True,drop_last=False)
-        # break #!@
+    txt_tar = open(f'{args.txt_folder}/{args.dset}/{names[args.s]}.csv').readlines() 
+    dsets = ImageList_MixUp(txt_tar, transform=image_train()) 
+    dset_loaders = DataLoader(dsets, batch_size=args.batch_size, shuffle=True,drop_last=False)
     return dset_loaders,dsets
 
 def separate_classwise_idx(args, dset, num_classes): #!@ args
@@ -122,7 +112,7 @@ def mixup_criterion(criterion, pred, y_a, y_b, lam):
     return lam * criterion(pred, y_a) + (1 - lam) * criterion(pred, y_b)
 
 
-def train(args, epoch,trainloader):
+def train(args, epoch,all_loader):
     print('\nEpoch: %d' % epoch)
     netF.train()
     netB.train()
@@ -132,13 +122,7 @@ def train(args, epoch,trainloader):
     correct = 0
     total = 0
 
-    # a = next(iter(trainloader))
-    # class_list_shuffler = random.sample(range(args.num_classes), args.num_classes)
-    # for counter, class_id in enumerate(class_list_shuffler) :
-    #     trainloader = loader_dict[class_id]
-        # print('Class_id: ', class_id, 'Len_dataLoader: ', len(trainloader))
-
-    for batch_idx, (inputs, pseudo_lbl, targets, domain) in enumerate(trainloader):
+    for batch_idx, (inputs, pseudo_lbl, targets, domain) in enumerate(all_loader):
         if use_cuda:
             inputs, targets, pseudo_lbl, domain = inputs.cuda(), targets.cuda(),  pseudo_lbl.cuda(), domain.cuda()
 
@@ -161,7 +145,7 @@ def train(args, epoch,trainloader):
                 'train_acc': 100.*correct/total, 
             })
     
-        progress_bar(batch_idx, len(trainloader),
+        progress_bar(batch_idx, len(all_loader),
                     'Loss: %.3f | Acc: %.3f%% (%d/%d)'
                     % (train_loss/(batch_idx+1),100.*correct/total, correct, total))
                 # return (train_loss/batch_idx, reg_loss/batch_idx, 100.*correct/total)
@@ -178,7 +162,7 @@ def test(epoch):
     total = 0
     with torch.no_grad():
 
-        for batch_idx, (inputs, pseudo_lbl, targets, domain) in enumerate(testloader):
+        for batch_idx, (inputs, pseudo_lbl, targets, domain) in enumerate(all_loader):
             if use_cuda:
                 inputs, pseudo_lbl, targets, domain = inputs.cuda(), pseudo_lbl.cuda(), targets.cuda(), domain.cuda()
             inputs, pseudo_lbl = Variable(inputs), Variable(pseudo_lbl)
@@ -190,10 +174,7 @@ def test(epoch):
             total += pseudo_lbl.size(0)
             correct += predicted.eq(targets.data).cpu().sum()
 
-            progress_bar(batch_idx, len(testloader),
-                        'Loss: %.3f | Acc: %.3f%% (%d/%d)'
-                        % (test_loss/(batch_idx+1), 100.*correct/total,
-                            correct, total))
+            progress_bar(batch_idx, len(all_loader),'Loss: %.3f | Acc: %.3f%% (%d/%d)'% (test_loss/(batch_idx+1), 100.*correct/total, correct, total))
         acc = 100.*correct/total
         if epoch == start_epoch + args.epoch - 1 or acc > best_acc:
             checkpoint(args, netF, netB, netC)
@@ -243,7 +224,8 @@ if __name__ == '__main__':
     parser.add_argument('--alpha', default=1., type=float,
                         help='mixup interpolation coefficient (default: 1)')
     parser.add_argument('--wandb', type=int, default=0)
-    parser.add_argument('--s', type=str)
+    parser.add_argument('--s', default=0, type=int)
+    parser.add_argument('--txt_folder', default='test_target', type=str)
     parser.add_argument('--dset', type=str, default='office-home',
                         choices=['visda-2017', 'office', 'office-home', 'office-caltech', 'pacs', 'domain_net'])
 
@@ -256,6 +238,25 @@ if __name__ == '__main__':
 
     if args.seed != 0:
         torch.manual_seed(args.seed)
+
+    if args.dset == 'office-home':
+        names = ['Art', 'Clipart', 'Product', 'RealWorld']
+        args.class_num = 65
+    if args.dset == 'office':
+        names = ['amazon', 'dslr', 'webcam']
+        args.class_num = 31
+    if args.dset == 'visda-2017':
+        names = ['train', 'validation']
+        args.class_num = 12
+    if args.dset == 'office-caltech':
+        names = ['amazon', 'caltech', 'dslr', 'webcam']
+        args.class_num = 7
+    if args.dset == 'pacs':
+        names = ['art_painting', 'cartoon', 'photo', 'sketch']
+        args.class_num = 7
+    if args.dset =='domain_net':
+        names = ['clipart', 'infograph', 'painting', 'quickdraw','sketch', 'real']
+        args.class_num = 345
 
     # Data
     print('==> Preparing data..')
@@ -283,7 +284,7 @@ if __name__ == '__main__':
         os.mkdir('results')
 
 
-    all_loader,all_dset = data_load(batch_size=args.batch_size)
+    all_loader,all_dset = data_load(args)
     print('==> Building model..')
     netF, netB, netC = init_src_model_load(args)
 
@@ -316,26 +317,17 @@ if __name__ == '__main__':
                                 'test loss', 'test acc'])
 
     mode = 'online' if args.wandb else 'disabled'
-    wandb.init(project='MixUp KD', entity='vclab', name=f'A20_'+args.suffix, mode=mode)#!@
+    wandb.init(project='MixUp KD', entity='vclab', name=f'{names[args.s]} to other {args.suffix}', mode=mode)#!@
 
-
-    trainloader = all_loader[args.s]
-    testloader =  all_loader[args.s]
-
-    # classwise_loaders, classwise_dset = separate_classwise_idx(args, all_dset[args.s], args.num_classes)#!@
+    print(f'\nStarting training {names[args.s]} to others. ({len(all_dset)} Images)')
 
     for epoch in range(start_epoch, args.epoch):
 
-        train_loss, reg_loss, train_acc = train(args, epoch, trainloader)
+        train_loss, reg_loss, train_acc = train(args, epoch, all_loader)
 
-        if epoch % 100 == 99:
+        if epoch % 15 == 0:
             print('\n Start Testing')
             test_loss, test_acc = test(epoch)
             wandb.log({ 'test_loss': test_loss,  
                         'test_acc': test_acc,
                         })
-        # adjust_learning_rate(optimizer, epoch)
-        # with open(logname, 'a') as logfile:
-        #     logwriter = csv.writer(logfile, delimiter=',')
-        #     logwriter.writerow([epoch, train_loss, reg_loss, train_acc, test_loss,
-        #                         test_acc])
