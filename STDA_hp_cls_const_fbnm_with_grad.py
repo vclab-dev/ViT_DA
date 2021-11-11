@@ -293,7 +293,7 @@ def train_target(args):
             if args.grad_norm == 1:
                 mem_label, soft_output, dd, mean_all_output, actual_label,grad_norm, grad_norm_stg = obtain_label(dset_loaders['test'], dsets["strong_aug"], netF, netB, netC, args) # test loader same as targe but has 3*batch_size compared to target and train
             else:
-                mem_label, soft_output, dd, mean_all_output, actual_label,grad_norm, grad_norm_stg = obtain_label(dset_loaders['test'], dsets["strong_aug"], netF, netB, netC, args) # test loader same as targe but has 3*batch_size compared to target and train
+                mem_label, soft_output, dd, mean_all_output, actual_label = obtain_label(dset_loaders['test'], dsets["strong_aug"], netF, netB, netC, args) # test loader same as targe but has 3*batch_size compared to target and train
 
             if args.rlcc:
                 if iter_num == 0:
@@ -755,6 +755,10 @@ if __name__ == "__main__":
         wandb.init(project='STDA_Office-home', entity='vclab', name=f'{names[args.s]} to {names[args.t]} '+args.suffix, reinit=True,mode=mode)
     if args.dset == 'office':
         wandb.init(project='STDA_Office31', entity='vclab', name=f'{names[args.s]} to {names[args.t]} '+ args.suffix, reinit=True,mode=mode)
+    if args.dset == 'domain_net':
+        wandb.init(project='STDA_domain_net', entity='vclab', name=f'{names[args.s]} to {names[args.t]} '+ args.suffix, reinit=True,mode=mode)
+    if args.dset == 'visda-2017':
+        wandb.init(project='STDA_VisDA', entity='vclab', name=f'{names[args.s]} to {names[args.t]} '+ args.suffix, reinit=True,mode=mode)
     #config = wandb.config
     args.output_dir_src = osp.join(args.output_src, args.da, args.dset, names[args.s][0].upper())
     args.output_dir = osp.join(args.output, 'STDA', args.dset, names[args.s][0].upper() + names[args.t][0].upper())
