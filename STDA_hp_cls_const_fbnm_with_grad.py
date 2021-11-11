@@ -290,7 +290,11 @@ def train_target(args):
             netC.eval()
             ################################ Done ###################################
             print('Starting to find Pseudo Labels! May take a while :)')
-            mem_label, soft_output, dd, mean_all_output, actual_label,grad_norm, grad_norm_stg = obtain_label(dset_loaders['test'], dsets["strong_aug"], netF, netB, netC, args) # test loader same as targe but has 3*batch_size compared to target and train
+            if args.grad_norm == 1:
+                mem_label, soft_output, dd, mean_all_output, actual_label,grad_norm, grad_norm_stg = obtain_label(dset_loaders['test'], dsets["strong_aug"], netF, netB, netC, args) # test loader same as targe but has 3*batch_size compared to target and train
+            else:
+                mem_label, soft_output, dd, mean_all_output, actual_label,grad_norm, grad_norm_stg = obtain_label(dset_loaders['test'], dsets["strong_aug"], netF, netB, netC, args) # test loader same as targe but has 3*batch_size compared to target and train
+
             if args.rlcc:
                 if iter_num == 0:
                     prev_mem_label = mem_label
@@ -617,12 +621,15 @@ def obtain_label(loader, dset_stg, netF, netB, netC, args):
     print(log_str + '\n')
 
     dd = F.softmax(torch.from_numpy(dd), dim=1)
-    grad_norm = grad_embedding(all_fea, pred_label.astype('int'), netC) #change
-    grad_norm["pseudo_label"] = pred_label.astype('float')
-    grad_norm["actual_label"] = all_label.float().numpy()
+    if args.grad_norm == 1:
+        grad_norm = grad_embedding(all_fea, pred_label.astype('int'), netC) #change
+        grad_norm["pseudo_label"] = pred_label.astype('float')
+        grad_norm["actual_label"] = all_label.float().numpy()
 
-    grad_norm_stg = grad_embedding(all_fea_stg.numpy(), predict_stg.numpy().astype('int'), netC)
-    return pred_label, all_output.cpu().numpy(), dd.numpy().astype('float32') ,mean_all_output, all_label.cpu().numpy().astype(np.uint8), grad_norm, grad_norm_stg
+        grad_norm_stg = grad_embedding(all_fea_stg.numpy(), predict_stg.numpy().astype('int'), netC)
+        return pred_label, all_output.cpu().numpy(), dd.numpy().astype('float32') ,mean_all_output, all_label.cpu().numpy().astype(np.uint8), grad_norm, grad_norm_stg
+    else:
+        return pred_label, all_output.cpu().numpy(), dd.numpy().astype('float32') ,mean_all_output, all_label.cpu().numpy().astype(np.uint8)
 
 def distributed_sinkhorn(out,eps=0.1, niters=3,world_size=1):
     Q = torch.exp(out / eps).t() # Q is K-by-B for consistency with notations from our paper
