@@ -113,7 +113,7 @@ class ImageList_dom_dis(Dataset):
         if self.target_transform is not None:
             target = self.target_transform(target)
 
-        return img, target, index,src
+        return img, src
 
     def __len__(self):
         return len(self.imgs)

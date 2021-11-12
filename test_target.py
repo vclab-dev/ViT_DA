@@ -3,6 +3,7 @@ import os, sys
 import os.path as osp
 import torchvision
 import numpy as np
+from tqdm import tqdm
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -19,7 +20,6 @@ from sklearn.metrics import confusion_matrix
 from sklearn.cluster import KMeans
 import wandb
 import pandas as pd
-from STDA_hp_cls_const_fbnm_with_grad import grad_embedding
 
 def op_copy(optimizer):
     for param_group in optimizer.param_groups:
@@ -120,10 +120,11 @@ def data_load(args):
 
 def cal_acc(loader, netF, netB, netC, flag=False):
     start_test = True
+    print("Finding Accuracy and Pseudo Label")
     with torch.no_grad():
         iter_test = iter(loader)
         all_idx = []
-        for i in range(len(loader)):
+        for i in tqdm(range(len(loader))):
             data = iter_test.next()
             inputs = data[0]
             labels = data[1]
@@ -150,8 +151,6 @@ def cal_acc(loader, netF, netB, netC, flag=False):
     all_fea = (all_fea.t() / torch.norm(all_fea, p=2, dim=1)).t()
     all_fea = all_fea.float().cpu().numpy()
 
-    grad_norm = grad_embedding(all_fea, predict.numpy(), netC)
-
     accuracy = torch.sum(torch.squeeze(predict).float() == all_label).item() / float(all_label.size()[0])
     mean_ent = torch.mean(loss.Entropy(all_output)).cpu().data.item()
    
@@ -163,7 +162,7 @@ def cal_acc(loader, netF, netB, netC, flag=False):
         acc = ' '.join(aa)
         return aacc, acc
     else:
-        return accuracy*100, mean_ent, predict, all_idx.numpy(), grad_norm
+        return accuracy*100, mean_ent, predict, all_idx.numpy()
 
 def cal_acc_oda(loader, netF, netB, netC):
     start_test = True
@@ -221,9 +220,9 @@ def test_target(args):
     netB = network.feat_bootleneck(type=args.classifier, feature_dim=netF.in_features, bottleneck_dim=args.bottleneck).cuda()
     netC = network.feat_classifier(type=args.layer, class_num = args.class_num, bottleneck_dim=args.bottleneck).cuda()
     
-    netF = nn.DataParallel(netF)
-    netB = nn.DataParallel(netB)
-    netC = nn.DataParallel(netC)
+    # netF = nn.DataParallel(netF)
+    # netB = nn.DataParallel(netB)
+    # netC = nn.DataParallel(netC)
     
     if args.source_test:
         args.modelpath = args.output_dir_src + '/source_F.pt'   
@@ -254,10 +253,10 @@ def test_target(args):
             acc, acc_list = cal_acc(dset_loaders['test'], netF, netB, netC, True)
             log_str = '\nTraining: {}, Task: {}, Accuracy = {:.2f}%'.format(args.trte, args.name, acc) + '\n' + acc_list
         else:
-            acc, _, predict, idx, grad_norm= cal_acc(dset_loaders['test'], netF, netB, netC, False)
+            acc, _, predict, idx = cal_acc(dset_loaders['test'], netF, netB, netC, False)
             log_str = '\nTraining: {}, Task: {}, Accuracy = {:.2f}%'.format(args.trte, args.name, acc)
 
-    return acc, predict, idx, grad_norm
+    return acc, predict, idx
 
 def print_args(args):
     s = "==========================================\n"
@@ -340,7 +339,7 @@ if __name__ == "__main__":
     
     args.name_src = names[args.s][0].upper()
     args.savename = 'par_' + str(args.cls_par)
-    args.save_dir = osp.join('delete/no_grad', args.dset)
+    args.save_dir = osp.join('test_target/no_grad', args.dset)
     if not osp.exists(args.save_dir):
         os.system('mkdir -p ' + args.save_dir)
 
@@ -368,16 +367,16 @@ if __name__ == "__main__":
                 args.src_classes = [i for i in range(25)]
                 args.tar_classes = [i for i in range(65)]
 
-        acc, pl, idx, grad_norm = test_target(args)
+        acc, pl, idx = test_target(args)
         txt_test = open(args.test_dset_path).readlines()
-        
         img_path = []
         label = []
-        for i in list(idx):
+        print("Getting Image Path")
+        for i in tqdm(list(idx)):
             image_path, lbl = txt_test[i].split(' ')
             img_path.append(image_path)
             label.append(int(lbl))
-        dict = {'Domain': args.t, 'Image Path': img_path, 'Actual Label': label, 'Pseudo Label': pl, 'grad_norm': grad_norm['2']}
+        dict = {'Domain': args.t, 'Image Path': img_path, 'Actual Label': label, 'Pseudo Label': pl}
         # print(dict)
         print('Write to CSV')
         df = pd.DataFrame(dict)

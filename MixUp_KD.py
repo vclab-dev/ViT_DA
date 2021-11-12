@@ -41,6 +41,15 @@ def init_src_model_load(args):
     netB = network.feat_bootleneck(type='bn', feature_dim=netF.in_features,bottleneck_dim=256).cuda()
     netC = network.feat_classifier(type='wn', class_num=args.class_num, bottleneck_dim=256).cuda()
 
+    if torch.cuda.device_count() > 1:
+        gpu_list = []
+        for i in range(len(args.gpu_id.split(','))):
+            gpu_list.append(i)
+        print("Let's use", torch.cuda.device_count(), "GPUs!")
+        # dim = 0 [30, xxx] -> [10, ...], [10, ...], [10, ...] on 3 GPUs
+        netF = nn.DataParallel(netF, device_ids=gpu_list)
+        netB = nn.DataParallel(netB, device_ids=gpu_list)
+        netC = nn.DataParallel(netC, device_ids=gpu_list)
     return netF, netB, netC
 
 def image_train(resize_size=256, crop_size=224, alexnet=False):
@@ -88,7 +97,7 @@ def data_load(args):
         txt_test = txt_tar.copy()   
 
         dsets["test"] = ImageList(txt_test, transform=image_train())
-        dset_loaders["test"] = DataLoader(dsets["test"], batch_size=args.batch_size, shuffle=True, drop_last=False)
+        dset_loaders["test"] = DataLoader(dsets["test"], batch_size=args.batch_size*2, shuffle=True, drop_last=False)
 
     return dset_loaders,dsets
 
@@ -176,7 +185,6 @@ def test(epoch,testloader):
     correct = 0
     total = 0
     with torch.no_grad():
-
         for batch_idx, (inputs, pseudo_lbl, targets, domain) in enumerate(testloader):
             if use_cuda:
                 inputs, pseudo_lbl, targets, domain = inputs.cuda(), pseudo_lbl.cuda(), targets.cuda(), domain.cuda()
@@ -233,6 +241,7 @@ if __name__ == '__main__':
     parser.add_argument('--batch_size', default=32, type=int, help='batch size')
     parser.add_argument('--epoch', default=200, type=int,
                         help='total epochs to run')
+    parser.add_argument('--interval', default=2, type=int)
     parser.add_argument('--no-augment', dest='augment', action='store_false',
                         help='use standard augmentation (default: True)')
     parser.add_argument('--decay', default=1e-4, type=float, help='weight decay')
@@ -344,7 +353,7 @@ if __name__ == '__main__':
 
         train_loss, reg_loss, train_acc = train(args, epoch, all_loader['train'])
 
-        if epoch % 10 == 0:
+        if epoch % args.interval == 0:
             print('\n Start Testing')
             test_loss, test_acc = test(epoch,all_loader['test'])
             wandb.log({ 'test_loss': test_loss,  
