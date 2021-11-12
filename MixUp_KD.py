@@ -72,8 +72,24 @@ def data_load(args):
     dset_loaders = {}
     
     txt_tar = open(f'{args.txt_folder}/{args.dset}/{names[args.s]}.csv').readlines() 
-    dsets = ImageList_MixUp(txt_tar, transform=image_train()) 
-    dset_loaders = DataLoader(dsets, batch_size=args.batch_size, shuffle=True,drop_last=False)
+    dsets['train'] = ImageList_MixUp(txt_tar, transform=image_train()) 
+    dset_loaders['train'] = DataLoader(dsets['train'], batch_size=args.batch_size, shuffle=True,drop_last=False)
+    
+    dsets['test'] = dsets['train']
+    dset_loaders['test'] = dset_loaders['train']
+
+    if args.dset =='domain_net':
+        txt_tar = []
+        for i in range(6):
+            if i == args.s:
+                continue
+            tmp = open(f'data/{args.dset}/{names[args.s].lower()}_test.txt').readlines()
+            txt_tar.extend(tmp)
+        txt_test = txt_tar.copy()   
+
+        dsets["test"] = ImageList(txt_test, transform=image_train())
+        dset_loaders["test"] = DataLoader(dsets["test"], batch_size=args.batch_size, shuffle=True, drop_last=False)
+
     return dset_loaders,dsets
 
 def separate_classwise_idx(args, dset, num_classes): #!@ args
@@ -284,8 +300,8 @@ if __name__ == '__main__':
         os.mkdir('results')
 
 
-    all_loader,all_dset = data_load(args)
-    print('==> Building model..')
+    print('==> Perparing Dataloaders and Building model..')
+    all_loader,all_dset = data_load(args)   
     netF, netB, netC = init_src_model_load(args)
 
     if use_cuda:
@@ -319,17 +335,18 @@ if __name__ == '__main__':
     mode = 'online' if args.wandb else 'disabled'
     wandb.init(project='MixUp KD', entity='vclab', name=f'{names[args.s]} to other {args.suffix}', mode=mode)#!@
 
-    print(f'\nStarting training {names[args.s]} to others. ({len(all_dset)} Images)')
+    print(f'\nStarting training {names[args.s]} to others.')
+    train_len = len(all_dset['train'])
+    test_len = len(all_dset['test'])
+    print(f'Training: {train_len} Images \t Testing: {test_len} Images')
 
-    testloader = all_loader
-    
     for epoch in range(start_epoch, args.epoch):
 
-        train_loss, reg_loss, train_acc = train(args, epoch, all_loader)
+        train_loss, reg_loss, train_acc = train(args, epoch, all_loader['train'])
 
         if epoch % 10 == 0:
             print('\n Start Testing')
-            test_loss, test_acc = test(epoch,testloader)
+            test_loss, test_acc = test(epoch,all_loader['test'])
             wandb.log({ 'test_loss': test_loss,  
                         'test_acc': test_acc,
                         })

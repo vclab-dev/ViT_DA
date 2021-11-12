@@ -221,6 +221,10 @@ def test_target(args):
     netB = network.feat_bootleneck(type=args.classifier, feature_dim=netF.in_features, bottleneck_dim=args.bottleneck).cuda()
     netC = network.feat_classifier(type=args.layer, class_num = args.class_num, bottleneck_dim=args.bottleneck).cuda()
     
+    netF = nn.DataParallel(netF)
+    netB = nn.DataParallel(netB)
+    netC = nn.DataParallel(netC)
+    
     if args.source_test:
         args.modelpath = args.output_dir_src + '/source_F.pt'   
         netF.load_state_dict(torch.load(args.modelpath))
@@ -235,6 +239,8 @@ def test_target(args):
         netB.load_state_dict(torch.load(args.modelpath))
         args.modelpath = args.output_dir_src + '/target_C_'+ args.savename + '.pt'   
         netC.load_state_dict(torch.load(args.modelpath))
+
+    
     netF.eval()
     netB.eval()
     netC.eval()
@@ -334,7 +340,7 @@ if __name__ == "__main__":
     
     args.name_src = names[args.s][0].upper()
     args.savename = 'par_' + str(args.cls_par)
-    args.save_dir = osp.join('test_target', args.dset)
+    args.save_dir = osp.join('delete/no_grad', args.dset)
     if not osp.exists(args.save_dir):
         os.system('mkdir -p ' + args.save_dir)
 
@@ -375,5 +381,4 @@ if __name__ == "__main__":
         # print(dict)
         print('Write to CSV')
         df = pd.DataFrame(dict)
-        hdr = False  if os.path.isfile(f'{names[args.s]}.csv') else True
-        df.to_csv(osp.join(args.save_dir, names[args.s]+'.csv'), mode = 'a', header=hdr, index=False)
+        df.to_csv(osp.join(args.save_dir, names[args.s]+'.csv'), mode = 'a', header=False, index=False)
