@@ -12,8 +12,11 @@ import network, loss
 from torch.utils.data import DataLoader
 from data_list import ImageList, ImageList_dom_dis
 from sklearn.metrics import accuracy_score
+from sklearn.model_selection import train_test_split
 from tqdm import tqdm
-
+from sklearn.neural_network import MLPClassifier
+import warnings
+warnings.filterwarnings("ignore")
 
 def print_args(args):
     s = "==========================================\n"
@@ -44,7 +47,7 @@ def load_model(args):
 
     modelpath = f'{args.weights_path}/{args.dset}/{names[args.s][0].upper()}{names[args.t][0].upper()}/target_F_par_0.2.pt'
     netF.load_state_dict(torch.load(modelpath))
-    # print('Model Loaded from', modelpath)
+    print('Model Loaded from', modelpath)
 
     netF.eval()
     netB.eval()
@@ -87,7 +90,7 @@ def feature_extractor(loader, netF,netB):
 
     with torch.no_grad():
         iter_test = iter(loader)
-        for i in range(len(loader)):
+        for i in tqdm(range(len(loader))):
             data = iter_test.next()
             inputs = data[0]
             labels = data[1]
@@ -104,6 +107,33 @@ def feature_extractor(loader, netF,netB):
 
     return all_fea, all_label
 
+
+def store_feats(args):
+    for net_use, weight_path in  [('resnet50','rn50/STDA_wt_fbnm_with_grad_rlcc_soft_with_stg/STDA'),('deit_s', 'weights/STDA_wt_fbnm_rlccsoft/STDA')]:
+        args.net = net_use 
+        args.weights_path = weight_path   
+        for i in range(len(names)):
+            args.s = i
+            for i in range(len(names)):
+                args.t = i
+                if i == args.s:
+                    continue
+                args.s_dset_path = args.txt_path + args.dset + '/' + names[args.s] + '.txt'
+                args.t_dset_path = args.txt_path + args.dset + '/' + names[args.t] + '.txt'
+                print(f'Processing  {names[args.t]}_{args.net}_{names[args.s][0].upper()}{names[args.t][0].upper()}')
+                dsets, dset_loaders = data_load(args)
+                netF,netB = load_model(args)
+
+                all_feas_train, all_label_train = feature_extractor(dset_loaders['target'], netF,netB)
+                save_dict = {'features': all_feas_train,
+                                'labels': all_label_train}
+                torch.save(save_dict,f'save_feats/{names[args.t][0]}_{names[args.s][0].upper()}{names[args.t][0].upper()}_{args.net}.pth')
+                
+                
+                all_feas_train, all_label_train = feature_extractor(dset_loaders['source'], netF,netB)
+                save_dict = {'features': all_feas_train,
+                                'labels': all_label_train}
+                torch.save(save_dict,f'save_feats/{names[args.s][0]}_{names[args.s][0].upper()}{names[args.t][0].upper()}_{args.net}.pth')
 
 if __name__=='__main__':
     parser = argparse.ArgumentParser(description='SHOT')
@@ -126,32 +156,39 @@ if __name__=='__main__':
         names = ['Art', 'Clipart', 'Product', 'RealWorld']
         args.class_num = 65
     
-    for i in range(len(names)):
-        args.t = i
-        if i == args.s:
-            continue
+    if not os.path.exists('save_feats'):
+        os.mkdir('save_feats')
+    
+    # store_feats(args) 
+    domains = ['A','C','P','R']
+    with open('a_dist.csv', 'w') as f:
+        f.write('adaptation,model,accuracy\n')
+    print('adaptation,model,accuracy')
+    for src in domains:
+        for tar in domains:
+            if src == tar:
+                continue
 
-        args.s_dset_path = args.txt_path + args.dset + '/' + names[args.s] + '.txt'
-        args.t_dset_path = args.txt_path + args.dset + '/' + names[args.t] + '.txt'
+            use_model = f'{src}{tar}'
+            for use_arch in ['resnet50','deit_s']:
+                # print()
+            
+                load_stored_pt = torch.load(f'save_feats/{use_model[0]}_{use_model}_{use_arch}.pth')
+                feats = load_stored_pt['features']
+                labels = load_stored_pt['labels']
 
-        dsets, dset_loaders = data_load(args)
-        netF,netB = load_model(args)
+                load_stored_pt = torch.load(f'save_feats/{use_model[1]}_{use_model}_{use_arch}.pth')
+                feats = torch.cat((feats, load_stored_pt['features']),dim=0)
+                labels = torch.cat((labels, load_stored_pt['labels']),dim=0)
 
-        concatenated_dsets = torch.utils.data.ConcatDataset([dsets['source'],dsets['target']])
-
-        train_size = int(0.8 * len(concatenated_dsets))
-        test_size = len(concatenated_dsets) - train_size
-        train_dataset, test_dataset = torch.utils.data.random_split(concatenated_dsets, [train_size, test_size])
-        trainloader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True,drop_last=False)
-        testloader = DataLoader(test_dataset, batch_size=args.batch_size, shuffle=True,drop_last=False)
-
-
-        all_feas_train, all_label_train = feature_extractor(trainloader, netF,netB)
-        all_feas_test, all_label_test = feature_extractor(testloader, netF,netB)
-
-        clf = svm.SVC()
-        clf.fit(all_feas_train, all_label_train)
-        pred_lables = clf.predict(all_feas_test)
-
-        acc = accuracy_score(all_label_test, pred_lables)
-        print(f'\nSVM Acc for {names[args.s]} 2 {names[args.t]} with {args.net}:', acc*100)
+                # X_train, X_test, y_train, y_test = train_test_split(feats, labels, test_size=0.1)
+                # print(X_train.shape, X_test.shape)
+                
+                clf = MLPClassifier(random_state=1, max_iter=100).fit(feats, labels)
+                y_pred = clf.predict(feats)
+                acc = accuracy_score(y_pred, labels)
+                with open('a_dist.csv', 'a') as f:
+                    f.write(f'{use_model},{use_arch},{acc*100}\n')  
+                
+                print(f'{use_model},{use_arch},{acc*100}')
+                

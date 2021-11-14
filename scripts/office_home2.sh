@@ -1,1 +1,0 @@
-python image_target_with_randaug.py --cls_par 0.3 --batch_size 32 --da uda --dset office-home --gpu_id 0 --s 0 --output_src ckps/source/ --output BMVC_SFMTDA --kd False --wandb 1

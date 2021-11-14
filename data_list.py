@@ -198,3 +198,43 @@ class ImageList_MixUp(Dataset):
 
     def __len__(self):
         return len(self.imgs)
+    
+class ImageList_ocda(Dataset):
+    def __init__(self, image_list, target, train=True, labels=None, transform=None, target_transform=None, mode='RGB'):
+        imgs = make_dataset_MixUp(image_list, labels)
+        images = []
+        for i in imgs:
+            if i[3] == target:
+                if train:
+                    continue
+                else:
+                    images.append(i)
+            else:
+                if train:
+                    images.append(i)
+                else:
+                    continue
+        if len(images) == 0:
+            raise(RuntimeError("Found 0 images in subfolders of: " + root + "\n"
+                               "Supported image extensions are: " + ",".join(IMG_EXTENSIONS)))
+
+        self.images = images
+        self.transform = transform
+        self.target_transform = target_transform
+        if mode == 'RGB':
+            self.loader = rgb_loader
+        elif mode == 'L':
+            self.loader = l_loader
+
+    def __getitem__(self, index):
+        path, pseudo_lbl, target, domain = self.images[index]
+        img = self.loader(path)
+        if self.transform is not None:
+            img = self.transform(img)
+        if self.target_transform is not None:
+            target = self.target_transform(target)
+
+        return img, pseudo_lbl, target, domain
+
+    def __len__(self):
+        return len(self.images)

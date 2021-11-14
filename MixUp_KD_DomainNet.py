@@ -232,11 +232,15 @@ def adjust_learning_rate(optimizer, epoch):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='PyTorch CIFAR10 Training')
+    parser.add_argument('--gpu_id', type=str, nargs='?', default='0', help="device id to run")
     parser.add_argument('--lr', default=0.1, type=float, help='learning rate')
     parser.add_argument('--resume', '-r', action='store_true',
                         help='resume from checkpoint')
     parser.add_argument('--net', default="deit_s", type=str,
                         help='model type (default: ResNet18)')
+    parser.add_argument('--kd', type=bool, default=False)
+    parser.add_argument('--se', type=bool, default=False)
+    parser.add_argument('--nl', type=bool, default=False)
     parser.add_argument('--name', default='0', type=str, help='name of run')
     parser.add_argument('--suffix', default='0', type=str, help='wandb name of run')
     parser.add_argument('--seed', default=0, type=int, help='random seed')
@@ -258,6 +262,7 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
 
+    os.environ["CUDA_VISIBLE_DEVICES"] = args.gpu_id
     use_cuda = torch.cuda.is_available()
 
     best_acc = 0  # best test accuracy

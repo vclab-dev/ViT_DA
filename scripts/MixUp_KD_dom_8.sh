@@ -1,0 +1,2 @@
+python3 MixUp_KD_DomainNet.py --gpu_id '0' --dset domain_net --net resnet101 --s 5 --batch_size 192 --epoch 9 --interval 3 --suffix mixup_rn101_domainnet --save_weights MTDA_weights/resnet101/mixup --wandb 1 --txt_folder test_target/no_grad
+# CUDA_VISIBLE_DEVICES=1 python3 test_MixUp_KD_DomainNet.py --dset domain_net --net vit --s 0 --batch_size 512 --epoch 20 --interval 2 --suffix domainnet_noGrad --output MTDA_weights --wandb 0 --txt_folder test_target/no_grad

@@ -42,15 +42,7 @@ def init_src_model_load(args):
     netB = network.feat_bootleneck(type='bn', feature_dim=netF.in_features,bottleneck_dim=256).cuda()
     netC = network.feat_classifier(type='wn', class_num=args.class_num, bottleneck_dim=256).cuda()
 
-    args.modelpath = args.output_dir_src + '/target_F.pt'   
-    netF.load_state_dict(torch.load(args.modelpath))
-    args.modelpath = args.output_dir_src + '/target_B.pt'   
-    netB.load_state_dict(torch.load(args.modelpath))
-    args.modelpath = args.output_dir_src + '/target_C.pt'   
-    netC.load_state_dict(torch.load(args.modelpath))
-    
-    print("Model Loaded")
-    if torch.cuda.device_count() > 1:
+    if torch.cuda.device_count() >= 1:
         gpu_list = []
         for i in range(len(args.gpu_id.split(','))):
             gpu_list.append(i)
@@ -59,6 +51,16 @@ def init_src_model_load(args):
         netF = nn.DataParallel(netF, device_ids=gpu_list)
         netB = nn.DataParallel(netB, device_ids=gpu_list)
         netC = nn.DataParallel(netC, device_ids=gpu_list)
+
+    args.modelpath = args.output_dir_src + '/target_F.pt'   
+    netF.load_state_dict(torch.load(args.modelpath))
+    args.modelpath = args.output_dir_src + '/target_B.pt'   
+    netB.load_state_dict(torch.load(args.modelpath))
+    args.modelpath = args.output_dir_src + '/target_C.pt'   
+    netC.load_state_dict(torch.load(args.modelpath))
+    
+    print("Model Loaded")
+    
     return netF, netB, netC
 
 def image_train(resize_size=256, crop_size=224, alexnet=False):
@@ -242,6 +244,7 @@ def adjust_learning_rate(optimizer, epoch):
 if __name__ == '__main__':
 
     parser = argparse.ArgumentParser(description='PyTorch CIFAR10 Training')
+    parser.add_argument('--gpu_id', type=str, nargs='?', default='0', help="device id to run")
     parser.add_argument('--lr', default=0.1, type=float, help='learning rate')
     parser.add_argument('--resume', '-r', action='store_true',
                         help='resume from checkpoint')
